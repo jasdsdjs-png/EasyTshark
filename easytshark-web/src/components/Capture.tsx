@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Button, Card, Grid, Typography } from '@arco-design/web-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Button, Card, Grid, Message, Typography } from '@arco-design/web-react';
 import styles from '../style/home.css'
 import LineChart from './LineChart.tsx';
 import { apiGet, apiPost } from '../Api.ts';
@@ -7,45 +7,77 @@ import { apiGet, apiPost } from '../Api.ts';
 function Capture({ type = '', onsubmit = null }) {
     const [datas, setDatas] = useState([])
     const [loading, setLoading] = useState(false)
-    let intervalId = null
-    // 监控网卡流量趋势
+    const intervalIdRef = useRef(null)
+    const hasShownNetworkErrorRef = useRef(false)
+
+    const showBackendWarning = () => {
+        if (!hasShownNetworkErrorRef.current) {
+            Message.warning('后端服务未连接，无法获取网卡流量数据')
+            hasShownNetworkErrorRef.current = true
+        }
+    }
+
     const startMonitorAdaptersFlowTrend = async () => {
-        await apiGet('/api/startMonitorAdaptersFlowTrend')
-        getAdaptersFlowTrendData()
+        try {
+            await apiGet('/api/startMonitorAdaptersFlowTrend')
+            getAdaptersFlowTrendData()
+        } catch (error) {
+            setDatas([])
+            showBackendWarning()
+        }
     }
-    // 获取流量趋势数据
+
     const getAdaptersFlowTrendData = async () => {
-        const values = await apiGet('/api/getAdaptersFlowTrendData')
-        setDatas(values?.data || [])
+        try {
+            const values = await apiGet('/api/getAdaptersFlowTrendData')
+            setDatas(values?.data || [])
+            hasShownNetworkErrorRef.current = false
+        } catch (error) {
+            setDatas([])
+            showBackendWarning()
+        }
     }
-    // 开始抓包
+
     const startCapture = async (key) => {
-        setLoading(true)
-        await apiPost('/api/startCapture', { adapterName: key })
-        onsubmit(type)
-        setLoading(false)
+        try {
+            setLoading(true)
+            await apiPost('/api/startCapture', { adapterName: key })
+            onsubmit(type)
+        } catch (error) {
+            Message.error('启动抓包失败，请确认后端服务已启动')
+        } finally {
+            setLoading(false)
+        }
     }
-    // 停止监控网卡流量趋势
+
     const stopMonitorAdaptersFlowTrend = async (item?: any, type?: string) => {
-        await apiGet('/api/stopMonitorAdaptersFlowTrend')
-        if (type)
+        try {
+            await apiGet('/api/stopMonitorAdaptersFlowTrend')
+        } catch (error) {
+            // Backend may be offline in browser-only development mode.
+        }
+        if (type) {
             startCapture(item)
+        }
     }
+
     useEffect(() => {
         startMonitorAdaptersFlowTrend()
-        intervalId = setInterval(getAdaptersFlowTrendData, 1000);
+        intervalIdRef.current = setInterval(getAdaptersFlowTrendData, 1000)
         return () => {
-            if (intervalId !== null) {
-                clearInterval(intervalId);
-                stopMonitorAdaptersFlowTrend();
+            if (intervalIdRef.current !== null) {
+                clearInterval(intervalIdRef.current)
+                intervalIdRef.current = null
             }
+            stopMonitorAdaptersFlowTrend()
         };
     }, [])
+
     return <Card style={{
                 background: 'var(--color-fill-1)',
                 maxHeight: 250,
-                overflowY: 'auto',   // 当内容超出时，显示垂直滚动条
-                overflowX: 'hidden', // 隐藏水平滚动条
+                overflowY: 'auto',
+                overflowX: 'hidden',
             }}
             className='mb-[20px]'>
             {Object.entries(datas).map(([key, value]) => (
@@ -53,7 +85,7 @@ function Capture({ type = '', onsubmit = null }) {
                     <Grid.Row gutter={24} style={{ alignItems: 'end' }}>
                         <Grid.Col span={5}><Typography.Ellipsis showTooltip>{key}</Typography.Ellipsis></Grid.Col>
                         <Grid.Col span={16}><LineChart data={value} /></Grid.Col>
-                        <Grid.Col span={3} style={{ textAlign: 'right' }}><Button type='primary' size={type ? 'small' : 'default'} onClick={() => stopMonitorAdaptersFlowTrend(key, 'cap')}>抓包</Button></Grid.Col>
+                        <Grid.Col span={3} style={{ textAlign: 'right' }}><Button type='primary' loading={loading} size={type ? 'small' : 'default'} onClick={() => stopMonitorAdaptersFlowTrend(key, 'cap')}>抓包</Button></Grid.Col>
                     </Grid.Row>
                 </div>
             ))}
