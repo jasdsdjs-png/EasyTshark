@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Frontend build output
+easytshark-web/build/
+easytshark-web/dist/
+
+# Logs
+*.log
+devserver.*.log
+
+# Runtime data
+*.pcap
+*.pcapng
+*.cap
+*.db
+*.dmp
+
+# Visual Studio build output
+**/.vs/
+**/Debug/
+**/Release/
+**/x64/
+**/x86/
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exp
+*.tlog
+*.recipe
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

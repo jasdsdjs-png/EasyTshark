@@ -1,0 +1,134 @@
+#nav-bar button {
+    margin-right: 20px;
+}
+
+.layout-basic-demo .arco-layout-footer,
+.layout-basic-demo .arco-layout-sider-children,
+.layout-basic-demo .arco-layout-content {
+  text-align: left;
+  font-stretch: condensed;
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.layout-basic-demo .arco-layout-footer {
+  height: 64px;
+  background-color: var(--color-primary-light-4);
+}
+
+.layout-basic-demo .arco-layout-sider {
+  width: 206px;
+}
+
+.layout-basic-demo .arco-layout-content {
+  background-color: rgb(#eee)
+}
+
+.mainContent {
+  height: 100%;
+}
+
+.packet-table {
+  height: calc(60vh - 100px);
+  overflow-y: hidden;
+}
+
+.packet-table .arco-table {
+  height: calc(100% - 50px);
+  cursor: pointer;
+  overflow: auto;
+}
+
+.table-demo-resizable-column .react-resizable {
+  position: relative;
+  background-clip: padding-box;
+}
+
+.table-demo-resizable-column .react-resizable-handle {
+  position: absolute;
+  width: 5px;
+  height: 30px;
+  top: 6px;
+  right: 5px;
+  cursor: col-resize;
+  z-index: 1;
+  border-right: 1px solid var(--color-border-2);
+  background: none;
+}
+
+.arco-table td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+.detail-pannel {
+  height: 40vh;
+  display: flex;
+  justify-content: space-between; /* 或者使用 space-around */
+  border-top: solid 1px #eee;
+
+  .proto-tree {
+    width: 50%;
+    height: calc(100%);
+    overflow-y: scroll;
+  }
+
+  .hex-data {
+    width: 50%;
+    overflow-y: scroll;
+    .offset {
+      display: flex;
+      overflow-y: auto;
+      font-size: 13px;
+      .selected {
+        background: rgba(82, 101, 255, 0.3);
+      }
+      span {
+        display: inline-block;
+        line-height: 22px;
+        width: 6.25%;
+        text-align: center;
+        cursor: context-menu;
+      }
+      .left {
+        width: 80px;
+        background: var(--color-fill-1);
+        min-height: 200px;
+        margin-top: 8px;
+        span {
+          display: block;
+          width: 100%;
+          text-align: center;
+          background:  var(--color-fill-1);
+          &:hover {
+            cursor: default;
+          }
+        }
+      }
+      .center {
+        padding: 8px 10px;
+        width: 63%;
+        word-break: normal;
+      }
+      .right {
+        width: 25%;
+        padding: 8px 20px;
+        word-break: normal;
+      }
+    }
+  }
+
+}
+
+
+.selected-row {
+  td {
+    background: var(--color-primary-light-1) !important;
+    border-top: 1px solid rgb(var(--primary-4));
+    border-bottom: 1px solid rgb(var(--primary-4));
+  }
+}
+

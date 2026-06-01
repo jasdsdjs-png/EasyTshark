@@ -1,0 +1,51 @@
+.home {
+    height: calc(100vh - 100px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    :global {
+      .arco-upload-trigger-drag {
+        padding: 20px 0;
+      }
+      .arco-upload-trigger-drag .arco-icon-plus {
+        margin-bottom: 0;
+        font-size: 18px;
+      }
+    }
+    .lines {
+      margin-bottom: 0px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--color-border-1);
+      &:last-child {
+        border: none;
+      }
+    }
+    .list {
+      div {
+        padding: 0 10px;
+        margin: 0 -10px;
+        line-height: 42px;
+        border-bottom: 1px solid var(--color-border-1);
+        &:last-child {
+          border: none;
+        }
+        &:hover {
+          background: var(--color-fill-2);
+        }
+      }
+    }
+    .input-file {
+      width: 100%;
+      border-radius: var(--border-radius-small);
+      border: 1px dashed var(--color-neutral-3);
+      background-color: var(--color-fill-1);
+      text-align: center;
+      transition: all 0.2s ease;
+      color: var(--color-text-1);
+      padding: 20px 0;
+      cursor: pointer;
+    }
+    .input-file.dragging {
+      border-color: rgb(var(--primary-6));
+      background-color: var(--color-primary-light-1);
+    }
+  }
