@@ -54,7 +54,7 @@ app.whenReady().then(() => {
     checkNpcap();
   }  
 
-  // 第二步：启动tshark_server进程
+  // 第二步：启动easytshark-server进程
   startTsharkServer();
 
   // 第三步：创建主窗口
@@ -131,10 +131,10 @@ async function checkNpcap() {
 }
 
 
-// 启动tshark_server进程
+// 启动easytshark-server进程
 function startTsharkServer() {
-  const tsharkServerPath = path.join(process.resourcesPath, 'tshark_server')
-  //const tsharkServerPath = 'D:/easytshark_lessons/lesson30/easytshark-server/x64/Debug/lesson30.exe'
+  const tsharkServerPath = path.join(process.resourcesPath, 'easytshark-server.exe')
+  //const tsharkServerPath = 'D:/easytshark-server/easytshark-server/x64/Debug/easytshark-server.exe'
   const args = ['--uipid=' + process.pid]; // 指定其前端进程的PID
   
   console.log('tsharkServerPath: ', tsharkServerPath)
