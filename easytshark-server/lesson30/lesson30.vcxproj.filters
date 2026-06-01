@@ -194,6 +194,9 @@
     <ClInclude Include="misc_util.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="network_stats_util.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="process_util.hpp">
       <Filter>头文件</Filter>
     </ClInclude>

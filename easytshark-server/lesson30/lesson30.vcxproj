@@ -162,6 +162,7 @@ copy /Y "$(SolutionDir)..\easytshark-web\resources\tshark_win\ip2region.xdb" "$(
     <ClInclude Include="tshark_database.hpp" />
     <ClInclude Include="ip2region_util.h" />
     <ClInclude Include="misc_util.hpp" />
+    <ClInclude Include="network_stats_util.hpp" />
     <ClInclude Include="process_util.hpp" />
     <ClInclude Include="third_library\httplib\httplib.h" />
     <ClInclude Include="third_library\ip2region\xdb_bench.h" />

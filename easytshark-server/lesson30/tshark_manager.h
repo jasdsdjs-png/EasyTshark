@@ -14,7 +14,9 @@
 #include "tshark_translate.hpp"
 #include "tshark_database.hpp"
 #include "tshark_datatype.h"
+#include "network_stats_util.hpp"
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -116,7 +118,7 @@ private:
     void captureWorkThreadEntry(std::string adapterName);
 
     // 后台负责监控网卡流量数据的工作线程函数
-    void adapterFlowTrendMonitorThreadEntry(std::string adapterName);
+    void adapterFlowTrendMonitorThreadEntry();
 
     // 解析每一行
     bool parseLine(std::string line, std::shared_ptr<Packet> packet);
@@ -177,25 +179,14 @@ private:
 
 
     // -----------------------------以下与网卡流量趋势监控有关-----------------------------------
-    // 网卡监控相关的信息
-    class AdapterMonitorInfo {
-    public:
-        AdapterMonitorInfo() {
-            monitorTsharkPipe = nullptr;
-            tsharkPid = 0;
-        }
-        std::string adapterName;                            // 网卡名称
-        std::map<long, long> flowTrendData;                 // 流量趋势数据
-        std::shared_ptr<std::thread> monitorThread;         // 负责监控该网卡输出的线程
-        FILE* monitorTsharkPipe;                            // 线程与tshark通信的管道
-        PID_T tsharkPid;                                    // 负责捕获该网卡数据的tshark进程PID
-    };
+    std::shared_ptr<std::thread> adapterFlowTrendMonitorThread;
 
-    // 后台流量趋势监控信息
-    std::map<std::string, AdapterMonitorInfo> adapterFlowTrendMonitorMap;
+    std::map<std::string, std::map<long, long>> adapterFlowTrendDataMap;
 
     // 访问上面流量趋势数据的锁
     std::recursive_mutex adapterFlowTrendMapLock;
+
+    std::atomic<bool> adapterFlowTrendMonitorStopFlag{ true };
 
     // 网卡流量监控的开始时间
     long adapterFlowTrendMonitorStartTime = 0;

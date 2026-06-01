@@ -1,6 +1,8 @@
 #include "tshark_manager.h"
 #include "third_library/loguru/loguru.hpp"
 
+#include <climits>
+
 #ifdef _WIN32
 #include <windows.h>
 // 使用宏来处理Windows和Unix的不同popen实现
@@ -621,7 +623,7 @@ std::vector<AdapterInfo> TsharkManager::getNetworkAdapters() {
 void TsharkManager::clearFlowTrendData() {
 
     adapterFlowTrendMapLock.lock();
-    adapterFlowTrendMonitorMap.clear();
+    adapterFlowTrendDataMap.clear();
     adapterFlowTrendMapLock.unlock();
 }
 
@@ -631,27 +633,14 @@ void TsharkManager::clearFlowTrendData() {
 void TsharkManager::startMonitorAdaptersFlowTrend() {
 
     reset();
-    std::unique_lock<std::recursive_mutex> lock(adapterFlowTrendMapLock);
-
-    clearFlowTrendData();
-    adapterFlowTrendMonitorStartTime = time(nullptr);
-
-    // 第一步：获取网卡列表
-    std::vector<AdapterInfo> adapterList = getNetworkAdapters();
-
-    // 第二步：每个网卡启动一个线程，统计对应网卡的数据
-    for (auto adapter : adapterList) {
-        adapterFlowTrendMonitorMap.insert(std::make_pair<>(adapter.name, AdapterMonitorInfo()));
-        AdapterMonitorInfo& monitorInfo = adapterFlowTrendMonitorMap.at(adapter.name);
-
-        monitorInfo.monitorThread = std::make_shared<std::thread>(&TsharkManager::adapterFlowTrendMonitorThreadEntry, this, adapter.name);
-        if (monitorInfo.monitorThread == nullptr) {
-            LOG_F(ERROR, "监控线程创建失败，网卡名：%s", adapter.name.c_str());
-        }
-        else {
-            LOG_F(INFO, "监控线程创建成功，网卡名：%s，monitorThread: %p", adapter.name.c_str(), monitorInfo.monitorThread.get());
-        }
+    {
+        std::unique_lock<std::recursive_mutex> lock(adapterFlowTrendMapLock);
+        clearFlowTrendData();
+        adapterFlowTrendMonitorStartTime = time(nullptr);
     }
+
+    adapterFlowTrendMonitorStopFlag = false;
+    adapterFlowTrendMonitorThread = std::make_shared<std::thread>(&TsharkManager::adapterFlowTrendMonitorThreadEntry, this);
 
     workStatus = STATUS_MONITORING;
 }
@@ -659,33 +648,13 @@ void TsharkManager::startMonitorAdaptersFlowTrend() {
 // 停止监控所有网卡流量统计数据
 void TsharkManager::stopMonitorAdaptersFlowTrend() {
 
-    std::unique_lock<std::recursive_mutex> lock(adapterFlowTrendMapLock);
-
-    // 先杀死对应的tshark进程
-    for (auto adapterPipePair : adapterFlowTrendMonitorMap) {
-        ProcessUtil::Kill(adapterPipePair.second.tsharkPid);
+    adapterFlowTrendMonitorStopFlag = true;
+    if (adapterFlowTrendMonitorThread && adapterFlowTrendMonitorThread->joinable()) {
+        adapterFlowTrendMonitorThread->join();
     }
-
-    // 然后关闭管道
-    for (auto adapterPipePair : adapterFlowTrendMonitorMap) {
-
-        // 然后关闭管道
-        pclose(adapterPipePair.second.monitorTsharkPipe);
-
-        if (adapterPipePair.second.monitorThread == nullptr) {
-            LOG_F(ERROR, "发现监控线程nullptr，网卡名：%s", adapterPipePair.first.c_str());
-            continue;
-        }
-
-        // 最后等待对应线程退出
-        adapterPipePair.second.monitorThread->join();
-
-        LOG_F(INFO, "网卡：%s 流量监控已停止", adapterPipePair.first.c_str());
-    }
+    adapterFlowTrendMonitorThread.reset();
 
     workStatus = STATUS_IDLE;
-
-    adapterFlowTrendMonitorMap.clear();
 }
 
 
@@ -702,17 +671,17 @@ void TsharkManager::getAdaptersFlowTrendData(std::map<std::string, std::map<long
     long endWindow = timeNow - adapterFlowTrendMonitorStartTime > 300 ? timeNow : adapterFlowTrendMonitorStartTime + 300;
 
     adapterFlowTrendMapLock.lock();
-    for (auto adapterPipePair : adapterFlowTrendMonitorMap) {
-        flowTrendData.insert(std::make_pair<>(adapterPipePair.first, std::map<long, long>()));
+    for (auto adapterFlowPair : adapterFlowTrendDataMap) {
+        flowTrendData.insert(std::make_pair<>(adapterFlowPair.first, std::map<long, long>()));
 
         // 从当前时间戳向前倒推300秒，构造map
         for (long t = startWindow; t <= endWindow; t++) {
             // 如果trafficPerSecond中存在该时间戳，则使用已有数据；否则填充为0
-            if (adapterPipePair.second.flowTrendData.find(t) != adapterPipePair.second.flowTrendData.end()) {
-                flowTrendData[adapterPipePair.first][t] = adapterPipePair.second.flowTrendData.at(t);
+            if (adapterFlowPair.second.find(t) != adapterFlowPair.second.end()) {
+                flowTrendData[adapterFlowPair.first][t] = adapterFlowPair.second.at(t);
             }
             else {
-                flowTrendData[adapterPipePair.first][t] = 0;
+                flowTrendData[adapterFlowPair.first][t] = 0;
             }
         }
     }
@@ -721,69 +690,34 @@ void TsharkManager::getAdaptersFlowTrendData(std::map<std::string, std::map<long
 }
 
 // 获取指定网卡的流量趋势数据
-void TsharkManager::adapterFlowTrendMonitorThreadEntry(std::string adapterName) {
-    if (adapterFlowTrendMonitorMap.find(adapterName) == adapterFlowTrendMonitorMap.end()) {
-        return;
-    }
+void TsharkManager::adapterFlowTrendMonitorThreadEntry() {
+    LOG_F(INFO, "启动轻量网卡流量监控线程");
 
-    char buffer[256] = { 0 };
-    std::map<long, long>& trafficPerSecond = adapterFlowTrendMonitorMap[adapterName].flowTrendData;
+    auto before = NetworkStatsUtil::getSnapshot();
+    while (!adapterFlowTrendMonitorStopFlag) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    // Tshark命令，指定网卡，实时捕获时间戳和数据包长度
-    std::string tsharkCmd = tsharkPath + " -i \"" + adapterName + "\" -T fields -e frame.time_epoch -e frame.len";
+        auto after = NetworkStatsUtil::getSnapshot();
+        auto delta = NetworkStatsUtil::calculateDelta(before, after, 1);
+        long currentTimestamp = time(nullptr);
 
-    LOG_F(INFO, "启动网卡流量监控: %s", tsharkCmd.c_str());
+        {
+            std::unique_lock<std::recursive_mutex> lock(adapterFlowTrendMapLock);
+            for (const auto& adapterCounterPair : delta) {
+                unsigned long long totalBytes = adapterCounterPair.second.ibytes + adapterCounterPair.second.obytes;
+                long bytesPerSecond = totalBytes > static_cast<unsigned long long>(LONG_MAX)
+                    ? LONG_MAX
+                    : static_cast<long>(totalBytes);
 
-    PID_T tsharkPid = 0;
-    FILE* pipe = ProcessUtil::PopenEx(tsharkCmd.c_str(), &tsharkPid);
-    if (!pipe) {
-        throw std::runtime_error("Failed to run tshark command.");
-    }
-
-    // 将管道保存起来
-    adapterFlowTrendMapLock.lock();
-    adapterFlowTrendMonitorMap[adapterName].monitorTsharkPipe = pipe;
-    adapterFlowTrendMonitorMap[adapterName].tsharkPid = tsharkPid;
-    adapterFlowTrendMapLock.unlock();
-
-    // 逐行读取tshark输出
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        std::string line(buffer);
-        std::istringstream iss(line);
-        std::string timestampStr, lengthStr;
-
-        if (line.find("Capturing") != std::string::npos || line.find("captured") != std::string::npos) {
-            continue;
-        }
-
-        // 解析每行的时间戳和数据包长度
-        if (!(iss >> timestampStr >> lengthStr)) {
-            continue;
-        }
-
-        try {
-            // 转换时间戳为long类型，秒数部分
-            long timestamp = static_cast<long>(std::stod(timestampStr));
-
-            // 转换数据包长度为long类型
-            long packetLength = std::stol(lengthStr);
-
-            // 每秒的字节数累加
-            trafficPerSecond[timestamp] += packetLength;
-
-            // 如果trafficPerSecond超过300秒，则删除最早的数据，始终只存储最近300秒的数据
-            while (trafficPerSecond.size() > 300) {
-                // 访问并删除最早的时间戳数据
-                auto it = trafficPerSecond.begin();
-                LOG_F(INFO, "Removing old data for second: %ld, Traffic: %ld bytes", it->first, it->second);
-                trafficPerSecond.erase(it);
+                std::map<long, long>& trafficPerSecond = adapterFlowTrendDataMap[adapterCounterPair.first];
+                trafficPerSecond[currentTimestamp] = bytesPerSecond;
+                while (trafficPerSecond.size() > 300) {
+                    trafficPerSecond.erase(trafficPerSecond.begin());
+                }
             }
+        }
 
-        }
-        catch (const std::exception& e) {
-            // 处理转换错误
-            LOG_F(ERROR, "Error parsing tshark output: %s", line.c_str());
-        }
+        before = after;
     }
 
     LOG_F(INFO, "adapterFlowTrendMonitorThreadEntry 已结束");
