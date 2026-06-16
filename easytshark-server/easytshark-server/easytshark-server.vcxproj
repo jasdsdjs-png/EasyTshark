@@ -139,23 +139,35 @@ copy /Y "$(SolutionDir)..\easytshark-web\resources\tshark_win\ip2region.xdb" "$(
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="adapter_flow_monitor.cpp" />
+    <ClCompile Include="distributed_runtime.cpp" />
     <ClCompile Include="ip2region_util.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="packet_parser.cpp" />
     <ClCompile Include="pagehelper.cpp" />
+    <ClCompile Include="proto\easytshark_worker.grpc.pb.cc" />
+    <ClCompile Include="proto\easytshark_worker.pb.cc" />
+    <ClCompile Include="session_aggregator.cpp" />
+    <ClCompile Include="storage_queue.cpp" />
     <ClCompile Include="third_library\ip2region\xdb_bench.cc" />
     <ClCompile Include="third_library\ip2region\xdb_search.cc" />
     <ClCompile Include="third_library\loguru\loguru.cpp" />
     <ClCompile Include="third_library\sqlite3\sqlite3.c" />
+    <ClCompile Include="tshark_command_service.cpp" />
     <ClCompile Include="tshark_manager.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="adapter_flow_monitor.h" />
     <ClInclude Include="controller\adaptor_controller.hpp" />
     <ClInclude Include="controller\base_controller.hpp" />
     <ClInclude Include="controller\packet_controller.hpp" />
     <ClInclude Include="controller\session_controller.hpp" />
     <ClInclude Include="controller\stats_controller.hpp" />
+    <ClInclude Include="distributed_runtime.h" />
     <ClInclude Include="pagehelper.h" />
     <ClInclude Include="proto_list.hpp" />
+    <ClInclude Include="proto\easytshark_worker.grpc.pb.h" />
+    <ClInclude Include="proto\easytshark_worker.pb.h" />
     <ClInclude Include="sql\packet_sql.hpp" />
     <ClInclude Include="sql\session_sql.hpp" />
     <ClInclude Include="sql\stats_sql.hpp" />
@@ -163,6 +175,7 @@ copy /Y "$(SolutionDir)..\easytshark-web\resources\tshark_win\ip2region.xdb" "$(
     <ClInclude Include="ip2region_util.h" />
     <ClInclude Include="misc_util.hpp" />
     <ClInclude Include="network_stats_util.hpp" />
+    <ClInclude Include="packet_parser.h" />
     <ClInclude Include="process_util.hpp" />
     <ClInclude Include="third_library\httplib\httplib.h" />
     <ClInclude Include="third_library\ip2region\xdb_bench.h" />
@@ -213,6 +226,9 @@ copy /Y "$(SolutionDir)..\easytshark-web\resources\tshark_win\ip2region.xdb" "$(
     <ClInclude Include="third_library\sqlite3\sqlite3.h" />
     <ClInclude Include="tshark_datatype.h" />
     <ClInclude Include="tshark_errorcode.hpp" />
+    <ClInclude Include="session_aggregator.h" />
+    <ClInclude Include="storage_queue.h" />
+    <ClInclude Include="tshark_command_service.h" />
     <ClInclude Include="tshark_manager.h" />
     <ClInclude Include="tshark_translate.hpp" />
   </ItemGroup>

@@ -70,33 +70,9 @@ public:
             ) t
         )SQL";
 
-        std::vector<std::string> conditionList;
-        if (!condition.proto.empty()) {
-            char buf[100] = {0};
-            snprintf(buf, sizeof(buf), "(app_proto like '%%%s%%' or trans_proto like '%%%s%%')", condition.proto.c_str(), condition.proto.c_str());
-            conditionList.push_back(buf);
-        }
-        if (!condition.ip.empty()) {
-            char buf[100] = {0};
-            snprintf(buf, sizeof(buf), "(ip='%s')", condition.ip.c_str());
-            conditionList.push_back(buf);
-        }
-        if (condition.port != 0) {
-            char buf[100] = {0};
-            snprintf(buf, sizeof(buf), "(ports like '%%%d%%')", condition.port);
-            conditionList.push_back(buf);
-        }
-
-        // 拼接 WHERE 条件
-        if (!conditionList.empty()) {
-            ss << " WHERE ";
-            for (size_t i = 0; i < conditionList.size(); ++i) {
-                if (i > 0) {
-                    ss << " AND ";
-                }
-                ss << conditionList[i];
-            }
-        }
+        ss << " WHERE (? = '' OR app_proto LIKE ? OR trans_proto LIKE ?)";
+        ss << " AND (? = '' OR ip = ?)";
+        ss << " AND (? = 0 OR port = ?)";
 
         ss << " GROUP BY ip";
         ss << PageHelper::getPageSql();

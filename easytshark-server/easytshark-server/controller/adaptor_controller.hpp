@@ -6,8 +6,9 @@
 // 网卡相关的接口
 class AdaptorController : public BaseController {
 public:
-    AdaptorController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager)
-        :BaseController(server, tsharkManager)
+    AdaptorController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager,
+        std::shared_ptr<DistributedRuntime> distributedRuntime = nullptr)
+        :BaseController(server, tsharkManager, distributedRuntime)
     {
     }
 
@@ -35,6 +36,18 @@ public:
 
         __server.Get("/api/getAdaptersFlowTrendData", [this](const httplib::Request& req, httplib::Response& res) {
             getAdaptersFlowTrendData(req, res);
+            });
+
+        __server.Get("/api/getBackendMetrics", [this](const httplib::Request& req, httplib::Response& res) {
+            getBackendMetrics(req, res);
+            });
+
+        __server.Get("/api/getWorkerList", [this](const httplib::Request& req, httplib::Response& res) {
+            getWorkerList(req, res);
+            });
+
+        __server.Get("/api/getDistributedTaskStatus", [this](const httplib::Request& req, httplib::Response& res) {
+            getDistributedTaskStatus(req, res);
             });
     }
 
@@ -191,6 +204,63 @@ public:
         }
         catch (const std::exception& e) {
             // 如果发生异常，返回错误响应
+            sendErrorResponse(res, ERROR_INTERNAL_WRONG);
+        }
+    }
+
+    void getBackendMetrics(const httplib::Request& req, httplib::Response& res) {
+        try {
+            rapidjson::Document dataDoc;
+            rapidjson::Document::AllocatorType& allocator = dataDoc.GetAllocator();
+            dataDoc.SetObject();
+            dataDoc.AddMember("http_worker_pool_enabled", true, allocator);
+
+            rapidjson::Value tshark(rapidjson::kObjectType);
+            __tsharkManager->writeMetricsJson(tshark, allocator);
+            dataDoc.AddMember("tshark", tshark, allocator);
+
+            rapidjson::Value distributed(rapidjson::kObjectType);
+            if (__distributedRuntime) {
+                __distributedRuntime->writeMetricsJson(distributed, allocator);
+            }
+            dataDoc.AddMember("distributed", distributed, allocator);
+            sendJsonResponse(res, dataDoc);
+        }
+        catch (const std::exception& e) {
+            sendErrorResponse(res, ERROR_INTERNAL_WRONG);
+        }
+    }
+
+    void getWorkerList(const httplib::Request& req, httplib::Response& res) {
+        try {
+            rapidjson::Document dataDoc;
+            rapidjson::Document::AllocatorType& allocator = dataDoc.GetAllocator();
+            dataDoc.SetObject();
+            rapidjson::Value workers(rapidjson::kArrayType);
+            if (__distributedRuntime) {
+                __distributedRuntime->writeWorkersJson(workers, allocator);
+            }
+            dataDoc.AddMember("workers", workers, allocator);
+            sendJsonResponse(res, dataDoc);
+        }
+        catch (const std::exception& e) {
+            sendErrorResponse(res, ERROR_INTERNAL_WRONG);
+        }
+    }
+
+    void getDistributedTaskStatus(const httplib::Request& req, httplib::Response& res) {
+        try {
+            rapidjson::Document dataDoc;
+            rapidjson::Document::AllocatorType& allocator = dataDoc.GetAllocator();
+            dataDoc.SetObject();
+            rapidjson::Value tasks(rapidjson::kArrayType);
+            if (__distributedRuntime) {
+                __distributedRuntime->writeTaskStatusJson(tasks, allocator);
+            }
+            dataDoc.AddMember("tasks", tasks, allocator);
+            sendJsonResponse(res, dataDoc);
+        }
+        catch (const std::exception& e) {
             sendErrorResponse(res, ERROR_INTERNAL_WRONG);
         }
     }

@@ -27,23 +27,23 @@ public:
 
 class Packet{
 public:
-    int frame_number;
-    double time;
-    uint32_t cap_len;
-    uint32_t len;
+    int frame_number = 0;
+    double time = 0.0;
+    uint32_t cap_len = 0;
+    uint32_t len = 0;
     std::string src_mac;
     std::string dst_mac;
     std::string src_ip;
     std::string src_location;
-    uint16_t src_port;
+    uint16_t src_port = 0;
     std::string dst_ip;
     std::string dst_location;
-    uint16_t dst_port;
+    uint16_t dst_port = 0;
     std::string trans_proto;       // 传输层协议
     std::string protocol;
     std::string info;
-    uint32_t file_offset;
-    uint32_t belong_session_id;    // 所属的会话ID，为0表示不属于任何会话
+    uint32_t file_offset = 0;
+    uint32_t belong_session_id = 0;    // 所属的会话ID，为0表示不属于任何会话
 
     void toJsonObj(rapidjson::Value& obj, rapidjson::Document::AllocatorType& allocator) const {
         rapidjson::Value pktObj(rapidjson::kObjectType);
@@ -72,23 +72,23 @@ public:
 // 会话信息
 class Session : public BaseDataObject {
 public:
-    uint32_t session_id;
+    uint32_t session_id = 0;
     std::string ip1;
-    uint16_t ip1_port;
+    uint16_t ip1_port = 0;
     std::string ip1_location;
     std::string ip2;
-    uint16_t ip2_port;
+    uint16_t ip2_port = 0;
     std::string ip2_location;
     std::string trans_proto;
     std::string app_proto;
-    double start_time;
-    double end_time;
-    uint32_t ip1_send_packets_count;   // ip1发送的数据包数
-    uint32_t ip1_send_bytes_count;     // ip1发送的字节数
-    uint32_t ip2_send_packets_count;   // ip2发送的数据包数
-    uint32_t ip2_send_bytes_count;     // ip2发送的字节数
-    uint32_t packet_count;           // 数据包数量
-    uint32_t total_bytes;            // 总字节数
+    double start_time = 0.0;
+    double end_time = 0.0;
+    uint32_t ip1_send_packets_count = 0;   // ip1发送的数据包数
+    uint32_t ip1_send_bytes_count = 0;     // ip1发送的字节数
+    uint32_t ip2_send_packets_count = 0;   // ip2发送的数据包数
+    uint32_t ip2_send_bytes_count = 0;     // ip2发送的字节数
+    uint32_t packet_count = 0;           // 数据包数量
+    uint32_t total_bytes = 0;            // 总字节数
 
     virtual void toJsonObj(rapidjson::Value& obj, rapidjson::Document::AllocatorType& allocator) const {
         obj.AddMember("session_id", session_id, allocator);

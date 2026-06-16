@@ -11,6 +11,7 @@ const HomePage = () => {
   const [loading, setLoading] = useState(false);
   const [cap, setCap] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [analysisTip, setAnalysisTip] = useState('');
 
   const onsubmit = () => {
     setCap(true);
@@ -18,20 +19,46 @@ const HomePage = () => {
     history.push('/data/dataPacket/all');
   };
 
+  const waitForAnalysisTask = async (taskId) => {
+    if (!taskId) {
+      throw new Error('missing task id');
+    }
+
+    while (true) {
+      const statusResult = await apiGet(`/api/analysisTasks/${taskId}`);
+      const task = statusResult.data;
+      setAnalysisTip(`分析任务 ${task.progress || 0}%`);
+
+      if (task.status === 'DONE') {
+        await apiPost(`/api/analysisTasks/${taskId}/activate`);
+        return;
+      }
+
+      if (task.status === 'FAILED') {
+        throw new Error(task.message || 'analysis task failed');
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+  };
+
   const analysisSelectedFile = async (file) => {
     if (!file) return;
 
     setCap(false);
     setLoading(true);
+    setAnalysisTip('提交分析任务...');
     try {
       await apiGet('/api/stopMonitorAdaptersFlowTrend');
-      await apiUploadFile('/api/uploadAnalysisFile', file);
+      const result = await apiUploadFile('/api/analysisTasks', file);
+      await waitForAnalysisTask(result.data.taskId);
       history.push('/data/dataPacket/all');
     } catch (error) {
       Message.error('文件分析失败');
       console.error('upload analysis file failed', error);
     } finally {
       setLoading(false);
+      setAnalysisTip('');
     }
   };
 
@@ -46,15 +73,18 @@ const HomePage = () => {
       if (selectedFilePath) {
         setCap(false);
         setLoading(true);
+        setAnalysisTip('提交分析任务...');
         try {
           await apiGet('/api/stopMonitorAdaptersFlowTrend');
-          await apiPost('/api/analysisFile', { filePath: selectedFilePath });
+          const result = await apiPost('/api/analysisTasks', { filePath: selectedFilePath });
+          await waitForAnalysisTask(result.data.taskId);
           history.push('/data/dataPacket/all');
         } catch (error) {
           Message.error('文件分析失败');
           console.error('analysis file failed', error);
         } finally {
           setLoading(false);
+          setAnalysisTip('');
         }
       }
     } catch (error) {
@@ -75,7 +105,7 @@ const HomePage = () => {
   };
 
   return <div>
-    <Spin loading={loading} style={{ width: '100%' }} tip={`${cap ? '实时抓包' : '文件'}分析中...`}>
+    <Spin loading={loading} style={{ width: '100%' }} tip={analysisTip || `${cap ? '实时抓包' : '文件'}分析中...`}>
       <div className='home' style={{ padding: '30px 20%' }}>
         <Typography.Title heading={6}>实时抓包分析</Typography.Title>
         <Capture onsubmit={onsubmit} />

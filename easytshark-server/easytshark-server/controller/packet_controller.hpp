@@ -8,6 +8,7 @@
 #include <memory>
 #include <fstream>
 #include <cctype>
+#include <algorithm>
 
 #include "base_controller.hpp"
 
@@ -15,8 +16,9 @@
 // 数据包相关的接口
 class PacketController : public BaseController {
 public:
-    PacketController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager)
-        : BaseController(server, tsharkManager)
+    PacketController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager,
+        std::shared_ptr<DistributedRuntime> distributedRuntime = nullptr)
+        : BaseController(server, tsharkManager, distributedRuntime)
     {
     }
 
@@ -40,6 +42,22 @@ public:
 
         __server.Post("/api/savePacket", [this](const httplib::Request& req, httplib::Response& res) {
             savePacket(req, res);
+        });
+
+        __server.Post("/api/analysisTasks", [this](const httplib::Request& req, httplib::Response& res) {
+            createAnalysisTask(req, res);
+        });
+
+        __server.Get(R"(/api/analysisTasks/([^/]+))", [this](const httplib::Request& req, httplib::Response& res) {
+            getAnalysisTask(req, res);
+        });
+
+        __server.Post(R"(/api/analysisTasks/([^/]+)/activate)", [this](const httplib::Request& req, httplib::Response& res) {
+            activateAnalysisTask(req, res);
+        });
+
+        __server.Post(R"(/api/analysisTasks/([^/]+)/cancel)", [this](const httplib::Request& req, httplib::Response& res) {
+            cancelAnalysisTask(req, res);
         });
     }
 
@@ -71,40 +89,12 @@ public:
     // 上传并分析离线数据包，供普通浏览器页面使用
     void uploadAnalysisFile(const httplib::Request& req, httplib::Response& res) {
         try {
-            if (!req.has_file("file")) {
+            std::string uploadPath;
+            if (!saveUploadedFile(req, uploadPath)) {
                 return sendErrorResponse(res, ERROR_PARAMETER_WRONG);
             }
 
-            const auto& file = req.get_file_value("file");
-            std::string filename = file.filename.empty() ? "upload.pcap" : file.filename;
-            size_t slashPos = filename.find_last_of("/\\");
-            if (slashPos != std::string::npos) {
-                filename = filename.substr(slashPos + 1);
-            }
-            for (auto& ch : filename) {
-                if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '.' && ch != '_' && ch != '-') {
-                    ch = '_';
-                }
-            }
-
-            std::string uploadPath = "upload_"
-                + std::to_string(MiscUtil::getCurrentTimeMillis())
-                + "_"
-                + filename;
-
-            std::ofstream out(uploadPath, std::ios::binary);
-            if (!out) {
-                return sendErrorResponse(res, ERROR_FILE_SAVE_FAILED);
-            }
-            out.write(file.content.data(), file.content.size());
-            out.close();
-
-            if (__tsharkManager->analysisFile(uploadPath)) {
-                sendSuccessResponse(res);
-            }
-            else {
-                sendErrorResponse(res, ERROR_TSHARK_WRONG);
-            }
+            sendAnalysisTaskAccepted(res, submitAnalysisTask(uploadPath));
         }
         catch (const std::exception& e) {
             sendErrorResponse(res, ERROR_INTERNAL_WRONG);
@@ -131,13 +121,7 @@ public:
                 return sendErrorResponse(res, ERROR_FILE_NOTFOUND);
             }
 
-            // 开始分析
-            if (__tsharkManager->analysisFile(filePath)) {
-                sendSuccessResponse(res);
-            }
-            else {
-                sendErrorResponse(res, ERROR_TSHARK_WRONG);
-            }
+            sendAnalysisTaskAccepted(res, submitAnalysisTask(filePath));
         }
         catch (const std::exception& e) {
             // 如果发生异常，返回错误响应
@@ -211,6 +195,158 @@ public:
             // 如果发生异常，返回错误响应
             sendErrorResponse(res, ERROR_PARAMETER_WRONG);
         }
+    }
+
+    void createAnalysisTask(const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::string filePath;
+            if (req.has_file("file")) {
+                if (!saveUploadedFile(req, filePath)) {
+                    return sendErrorResponse(res, ERROR_FILE_SAVE_FAILED);
+                }
+            }
+            else {
+                if (req.body.empty()) {
+                    return sendErrorResponse(res, ERROR_PARAMETER_WRONG);
+                }
+                rapidjson::Document doc;
+                if (doc.Parse(req.body.c_str()).HasParseError() || !doc.HasMember("filePath") || !doc["filePath"].IsString()) {
+                    return sendErrorResponse(res, ERROR_PARAMETER_WRONG);
+                }
+                filePath = doc["filePath"].GetString();
+                if (!MiscUtil::fileExists(filePath.c_str())) {
+                    return sendErrorResponse(res, ERROR_FILE_NOTFOUND);
+                }
+            }
+
+            std::string taskId = submitAnalysisTask(filePath);
+            sendAnalysisTaskAccepted(res, taskId);
+        }
+        catch (const std::exception&) {
+            sendErrorResponse(res, ERROR_INTERNAL_WRONG);
+        }
+    }
+
+    void getAnalysisTask(const httplib::Request& req, httplib::Response& res) {
+        try {
+            if (!__distributedRuntime || req.matches.size() < 2) {
+                return sendErrorResponse(res, ERROR_PARAMETER_WRONG);
+            }
+            std::string taskId = req.matches[1].str();
+            rapidjson::Document dataDoc;
+            auto& allocator = dataDoc.GetAllocator();
+            if (!__distributedRuntime->writeTaskStatusJson(taskId, dataDoc, allocator)) {
+                return sendErrorResponse(res, ERROR_FILE_NOTFOUND);
+            }
+            sendJsonResponse(res, dataDoc);
+        }
+        catch (const std::exception&) {
+            sendErrorResponse(res, ERROR_INTERNAL_WRONG);
+        }
+    }
+
+    void activateAnalysisTask(const httplib::Request& req, httplib::Response& res) {
+        try {
+            if (!__distributedRuntime || req.matches.size() < 2) {
+                return sendErrorResponse(res, ERROR_PARAMETER_WRONG);
+            }
+            std::string taskId = req.matches[1].str();
+            if (!__distributedRuntime->activateTask(taskId)) {
+                return sendErrorResponse(res, ERROR_STATUS_WRONG);
+            }
+            __tsharkManager->setActiveAnalysisManager(__distributedRuntime->getActiveAnalysisManager());
+            sendSuccessResponse(res);
+        }
+        catch (const std::exception&) {
+            sendErrorResponse(res, ERROR_INTERNAL_WRONG);
+        }
+    }
+
+    void cancelAnalysisTask(const httplib::Request& req, httplib::Response& res) {
+        try {
+            if (!__distributedRuntime || req.matches.size() < 2) {
+                return sendErrorResponse(res, ERROR_PARAMETER_WRONG);
+            }
+            std::string taskId = req.matches[1].str();
+            if (!__distributedRuntime->cancelTask(taskId)) {
+                return sendErrorResponse(res, ERROR_STATUS_WRONG);
+            }
+            sendSuccessResponse(res);
+        }
+        catch (const std::exception&) {
+            sendErrorResponse(res, ERROR_INTERNAL_WRONG);
+        }
+    }
+
+private:
+    void sendAnalysisTaskAccepted(httplib::Response& res, const std::string& taskId) {
+        if (taskId.empty()) {
+            return sendErrorResponse(res, ERROR_INTERNAL_WRONG);
+        }
+
+        rapidjson::Document dataDoc;
+        auto& allocator = dataDoc.GetAllocator();
+        dataDoc.SetObject();
+        dataDoc.AddMember("taskId", rapidjson::Value(taskId.c_str(), allocator), allocator);
+        dataDoc.AddMember("status", rapidjson::Value("QUEUED", allocator), allocator);
+        dataDoc.AddMember("async", true, allocator);
+        sendJsonResponse(res, dataDoc);
+    }
+
+    bool saveUploadedFile(const httplib::Request& req, std::string& uploadPath) {
+        if (!req.has_file("file")) {
+            return false;
+        }
+
+        const auto& file = req.get_file_value("file");
+        constexpr size_t kMaxUploadBytes = 1024ULL * 1024ULL * 1024ULL;
+        if (file.content.empty() || file.content.size() > kMaxUploadBytes) {
+            return false;
+        }
+
+        std::string filename = file.filename.empty() ? "upload.pcap" : file.filename;
+        size_t slashPos = filename.find_last_of("/\\");
+        if (slashPos != std::string::npos) {
+            filename = filename.substr(slashPos + 1);
+        }
+        for (auto& ch : filename) {
+            if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '.' && ch != '_' && ch != '-') {
+                ch = '_';
+            }
+        }
+
+        std::string lowerFilename = filename;
+        std::transform(lowerFilename.begin(), lowerFilename.end(), lowerFilename.begin(), ::tolower);
+        if (!(lowerFilename.size() >= 5 && lowerFilename.substr(lowerFilename.size() - 5) == ".pcap")
+            && !(lowerFilename.size() >= 7 && lowerFilename.substr(lowerFilename.size() - 7) == ".pcapng")
+            && !(lowerFilename.size() >= 4 && lowerFilename.substr(lowerFilename.size() - 4) == ".cap")) {
+            return false;
+        }
+
+        std::string uploadDir = MiscUtil::getDefaultDataDir() + "uploads/";
+        if (!MiscUtil::createDirectory(uploadDir)) {
+            return false;
+        }
+
+        uploadPath = uploadDir
+            + "upload_"
+            + std::to_string(MiscUtil::getCurrentTimeMillis())
+            + "_"
+            + filename;
+
+        std::ofstream out(uploadPath, std::ios::binary);
+        if (!out) {
+            return false;
+        }
+        out.write(file.content.data(), file.content.size());
+        return true;
+    }
+
+    std::string submitAnalysisTask(const std::string& filePath) {
+        if (!__distributedRuntime) {
+            return "";
+        }
+        return __distributedRuntime->submitAnalyzeTask(filePath);
     }
 };
 

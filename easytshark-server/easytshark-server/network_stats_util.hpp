@@ -57,21 +57,25 @@ public:
                 continue;
             }
 
-            std::string name(
+            std::string description(
                 reinterpret_cast<const char*>(row.bDescr),
                 reinterpret_cast<const char*>(row.bDescr) + row.dwDescrLen
             );
-            while (!name.empty() && name.back() == '\0') {
-                name.pop_back();
+            while (!description.empty() && description.back() == '\0') {
+                description.pop_back();
+            }
+
+            std::string name = normalizeWindowsAdapterAlias(getInterfaceAlias(row.dwIndex));
+            if (name.empty()) {
+                name = description;
             }
             if (name.empty()) {
                 continue;
             }
 
-            result[name] = NetworkCounters{
-                static_cast<unsigned long long>(row.dwInOctets),
-                static_cast<unsigned long long>(row.dwOutOctets)
-            };
+            NetworkCounters& counters = result[name];
+            counters.ibytes += static_cast<unsigned long long>(row.dwInOctets);
+            counters.obytes += static_cast<unsigned long long>(row.dwOutOctets);
         }
 
         std::free(table);
@@ -131,6 +135,41 @@ public:
 
 private:
 #ifdef _WIN32
+    static std::string normalizeWindowsAdapterAlias(const std::string& value) {
+        const char* filterSuffixes[] = {
+            "-Npcap Packet Driver",
+            "-QoS Packet Scheduler",
+            "-Native WiFi Filter Driver",
+            "-Virtual WiFi Filter Driver",
+            "-WFP 802.3 MAC Layer LightWeight Filter",
+            "-WFP Native MAC Layer LightWeight Filter",
+            "-Huorong NDIS Filter Driver"
+        };
+
+        for (const char* suffix : filterSuffixes) {
+            size_t pos = value.find(suffix);
+            if (pos != std::string::npos) {
+                return value.substr(0, pos);
+            }
+        }
+
+        return value;
+    }
+
+    static std::string getInterfaceAlias(DWORD ifIndex) {
+        NET_LUID luid;
+        if (ConvertInterfaceIndexToLuid(ifIndex, &luid) != NO_ERROR) {
+            return "";
+        }
+
+        wchar_t alias[IF_MAX_STRING_SIZE + 1] = { 0 };
+        if (ConvertInterfaceLuidToAlias(&luid, alias, IF_MAX_STRING_SIZE + 1) != NO_ERROR) {
+            return "";
+        }
+
+        return wideToUtf8(alias);
+    }
+
     static std::string wideToUtf8(const wchar_t* value) {
         if (value == nullptr || value[0] == L'\0') {
             return "";

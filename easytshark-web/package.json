@@ -23,8 +23,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "electron": "npx electron .",
-    "electron-dev": "npx electron . dev",
+    "electron": "node ./node_modules/electron/cli.js .",
+    "electron-dev": "node ./node_modules/electron/cli.js . dev",
     "electron-build": "npm run build && electron-builder",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

@@ -1,70 +1,159 @@
-# Getting Started with Create React App
+# EasyTshark Web
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+`easytshark-web` 是 EasyTshark 的前端与桌面壳工程，基于 React、Arco Design 和 Electron 构建。它负责展示抓包入口、数据包列表、协议详情、会话分析、数据流查看等界面，并通过本地 HTTP 接口调用 `easytshark-server`。
 
-## Available Scripts
+## 技术栈
 
-In the project directory, you can run:
+- React 18
+- TypeScript
+- React Router v5
+- Arco Design
+- Axios
+- ECharts
+- Tailwind CSS
+- Electron / electron-builder
 
-### `npm start`
+## 主要功能
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- 实时抓包入口：展示网卡流量趋势，选择网卡后开始抓包。
+- 离线文件分析：支持选择、拖拽上传 `.pcap`、`.cap`、`.pcapng` 文件。
+- 数据包分析：分页查看数据包，支持 ARP、ICMP、ICMPv6 等分类视图。
+- 数据包详情：展示协议解析树、十六进制数据和 ASCII 视图。
+- 会话分析：按 TCP、UDP、DNS、HTTP、TLS、SSH 查看会话列表。
+- 会话详情：展示会话时序图、会话数据流、ASCII/HEX/原始数据视图。
+- 文件保存：在 Electron 客户端中将当前抓包结果保存为 pcap 文件。
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## 项目结构
 
-### `npm test`
+```text
+easytshark-web/
+├── electron.js          # Electron 主进程，负责窗口、文件对话框、后端进程启动
+├── preload.js           # Electron preload，向渲染进程暴露安全 IPC API
+├── package.json         # 前端依赖、脚本和 electron-builder 配置
+├── public/              # 静态资源
+├── resources/           # 打包时随应用携带的 tshark/Npcap 资源
+└── src/
+    ├── Api.ts           # 本地后端 API 封装，默认访问 http://127.0.0.1:8080
+    ├── App.tsx          # 路由入口
+    ├── Page/            # 首页和主布局
+    ├── components/      # 抓包、数据包、会话、图表等业务组件
+    └── style/           # 全局样式
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## 环境要求
 
-### `npm run build`
+- Node.js 与 npm
+- Windows 环境建议安装 Npcap
+- 本地后端服务 `easytshark-server`，默认监听 `127.0.0.1:8080`
+- Electron 打包模式下需要可执行文件 `easytshark-server.exe` 以及 tshark 相关资源
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## 开发运行
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+安装依赖：
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+```bash
+npm install
+```
 
-### `npm run eject`
+启动 React 开发服务器：
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+```bash
+npm start
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+浏览器访问：
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+```text
+http://localhost:3000
+```
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+如果只启动浏览器前端，需要另外启动后端服务，否则抓包、文件分析和数据查询接口不可用。
 
-## Learn More
+启动 Electron 开发模式：
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```bash
+npm run electron-dev
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+Electron 开发模式会加载 `http://localhost:3000`，因此需要先运行 `npm start`。
 
-### Code Splitting
+## 可用脚本
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+```bash
+npm start
+```
 
-### Analyzing the Bundle Size
+启动 React 开发服务器。
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+```bash
+npm test
+```
 
-### Making a Progressive Web App
+以交互监听模式运行测试。
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+```bash
+npm run build
+```
 
-### Advanced Configuration
+构建生产环境静态文件到 `build/`。
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+```bash
+npm run electron
+```
 
-### Deployment
+使用当前构建产物启动 Electron。
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+```bash
+npm run electron-dev
+```
 
-### `npm run build` fails to minify
+以开发模式启动 Electron。
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+```bash
+npm run electron-build
+```
+
+先执行前端构建，再使用 electron-builder 打包桌面应用。
+
+## 后端接口约定
+
+前端默认调用：
+
+```text
+http://127.0.0.1:8080
+```
+
+主要接口包括：
+
+- `/api/getWorkStatus`
+- `/api/startCapture`
+- `/api/stopCapture`
+- `/api/startMonitorAdaptersFlowTrend`
+- `/api/getAdaptersFlowTrendData`
+- `/api/analysisFile`
+- `/api/uploadAnalysisFile`
+- `/api/getPacketList`
+- `/api/getPacketDetail`
+- `/api/savePacket`
+- `/api/getSessionList`
+- `/api/getSessionDataStream`
+- `/api/getIPStatsList`
+- `/api/getProtoStatsList`
+- `/api/getCountryStatsList`
+
+## 打包说明
+
+`package.json` 中的 `build.extraResources` 会把 `resources/tshark_${os}/` 复制到应用资源目录。Electron 主进程会从资源目录启动 `easytshark-server.exe`，并传入当前 UI 进程 PID：
+
+```text
+--uipid=<electron-process-pid>
+```
+
+后端会监控 UI 进程，UI 退出后自动停止 HTTP 服务并清理抓包任务。
+
+## 注意事项
+
+- `Api.ts` 中的后端地址是固定的 `http://127.0.0.1:8080`。
+- CORS 允许来源为 `http://localhost:3000`，开发端口变更时需要同步调整后端配置。
+- Electron 模式支持系统文件选择和保存对话框；浏览器模式使用文件上传兜底，保存到指定路径不可用。
+- Windows 抓包依赖 Npcap；打包资源中包含 Npcap 安装程序时，Electron 会在启动时检查并引导安装。

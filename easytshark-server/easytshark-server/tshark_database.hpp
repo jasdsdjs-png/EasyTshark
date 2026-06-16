@@ -9,6 +9,8 @@
 #include <list>
 #include <string>
 #include <sstream>
+#include <mutex>
+#include <chrono>
 #include "sqlite3/sqlite3.h"
 #include <stdexcept>
 #include "tshark_datatype.h"
@@ -29,13 +31,24 @@ public:
         // 删除之前的旧文件（如果有的话）
         remove(dbName.c_str());
 
-        // 打开数据库连接
+        this->dbName = dbName;
+
+        // 打开写连接
         if (sqlite3_open(dbName.c_str(), &db) != SQLITE_OK) {
             throw std::runtime_error("Failed to open database");
         }
+        sqlite3_busy_timeout(db, 5000);
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", nullptr, nullptr, nullptr);
 
         createPacketTable();
         createSessionTable();
+
+        // 独立读连接用于分页/统计查询，配合 WAL 降低读写互相阻塞。
+        if (sqlite3_open_v2(dbName.c_str(), &readDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nullptr) != SQLITE_OK) {
+            throw std::runtime_error("Failed to open read database");
+        }
+        sqlite3_busy_timeout(readDb, 5000);
     }
 
     // 析构函数，关闭数据库连接
@@ -43,11 +56,15 @@ public:
         if (db) {
             sqlite3_close(db);
         }
+        if (readDb) {
+            sqlite3_close(readDb);
+        }
     }
 
 
     // 存储数据包信息到表中
     bool storePackets(std::vector<std::shared_ptr<Packet>>& packets) {
+        std::lock_guard<std::mutex> lock(dbMutex);
 
         // 开启事务
         sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
@@ -112,6 +129,7 @@ public:
 
     // 存储会话信息到表中
     void storeAndUpdateSessions(std::unordered_set<std::shared_ptr<Session>>& sessions) {
+        std::lock_guard<std::mutex> lock(dbMutex);
 
         // 开启事务
         sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr);
@@ -179,17 +197,16 @@ public:
 
     // 从数据库查询数据包分页数据
     bool queryPackets(QueryCondition& queryConditon, std::vector<std::shared_ptr<Packet>> &packetList, int& total) {
+        std::lock_guard<std::mutex> lock(readDbMutex);
         sqlite3_stmt *stmt = nullptr, *countStmt = nullptr;
         std::string sql = PacketSQL::buildPacketQuerySQL(queryConditon);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            LOG_F(ERROR, "Failed to prepare statement: ");
+        auto queryStart = std::chrono::steady_clock::now();
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            LOG_F(ERROR, "Failed to prepare statement: %s", sqlite3_errmsg(readDb));
             return false;
         }
 
-        sqlite3_bind_text(stmt, 1, queryConditon.ip.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 2, queryConditon.ip.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_int(stmt, 3, queryConditon.port);
-        sqlite3_bind_int(stmt, 4, queryConditon.port);
+        bindPacketQueryCondition(stmt, queryConditon);
 
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             std::shared_ptr<Packet> packet = std::make_shared<Packet>();
@@ -216,10 +233,11 @@ public:
 
         // 再查询总数total
         sql = PacketSQL::buildPacketQuerySQL_Count(queryConditon);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
+        bindPacketQueryCondition(countStmt, queryConditon);
         // 执行查询并获取结果
         if (sqlite3_step(countStmt) == SQLITE_ROW) {
             total = sqlite3_column_int(countStmt, 0);
@@ -227,18 +245,22 @@ public:
 
         sqlite3_finalize(countStmt);
 
+        logSlowQuery("queryPackets", queryStart, sql);
         return true;
     }
 
     // 从数据库查询会话分页数据
     bool querySessions(QueryCondition& condition, std::vector<std::shared_ptr<Session>>& sessionList, int& total) {
+        std::lock_guard<std::mutex> lock(readDbMutex);
         sqlite3_stmt* stmt = nullptr, * countStmt = nullptr;
         std::string sql = SessionSQL::buildSessionQuerySQL(condition);
+        auto queryStart = std::chrono::steady_clock::now();
 
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
+        bindSessionQueryCondition(stmt, condition);
 
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             std::shared_ptr<Session> session = std::make_shared<Session>();
@@ -263,30 +285,37 @@ public:
             sessionList.push_back(session);
         }
 
+        sqlite3_finalize(stmt);
+
         // 再查询总数total
         sql = SessionSQL::buildSessionQuerySQL_Count(condition);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
+        bindSessionQueryCondition(countStmt, condition);
         // 执行查询并获取结果
         if (sqlite3_step(countStmt) == SQLITE_ROW) {
             total = sqlite3_column_int(countStmt, 0);
         }
 
         sqlite3_finalize(countStmt);
+        logSlowQuery("querySessions", queryStart, sql);
         return true;
     }
 
     // IP统计查询-查询列表数据
     bool queryIPStats(QueryCondition& condition, std::vector<std::shared_ptr<IPStatsInfo>>& ipStatsList, int& total) {
+        std::lock_guard<std::mutex> lock(readDbMutex);
 
         sqlite3_stmt* stmt = nullptr, * countStmt = nullptr;
         std::string sql = StatsSQL::buildIPStatsQuerySQL(condition);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        auto queryStart = std::chrono::steady_clock::now();
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
+        bindIPStatsQueryCondition(stmt, condition);
 
         // 执行查询并输出结果
         while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -319,26 +348,30 @@ public:
 
         // 再查询总数total
         sql = StatsSQL::buildIPStatsQuerySQL_Count(condition);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
+        bindIPStatsQueryCondition(countStmt, condition);
         // 执行查询并获取结果
         if (sqlite3_step(countStmt) == SQLITE_ROW) {
             total = sqlite3_column_int(countStmt, 0);
         }
 
         sqlite3_finalize(countStmt);
+        logSlowQuery("queryIPStats", queryStart, sql);
         return true;
     }
 
     // 协议统计查询-查询列表数据
     bool queryProtoStats(QueryCondition& condition, std::vector<std::shared_ptr<ProtoStatsInfo>>& protoStatsList, int& total) {
+        std::lock_guard<std::mutex> lock(readDbMutex);
 
         sqlite3_stmt* stmt = nullptr, * countStmt = nullptr;
         std::string sql = StatsSQL::buildProtoStatsQuerySQL(condition);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        auto queryStart = std::chrono::steady_clock::now();
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
 
@@ -357,8 +390,8 @@ public:
 
         // 再查询总数total
         sql = StatsSQL::buildProtoStatsQuerySQL_Count(condition);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
         // 执行查询并获取结果
@@ -367,17 +400,20 @@ public:
         }
 
         sqlite3_finalize(countStmt);
+        logSlowQuery("queryProtoStats", queryStart, sql);
         return true;
     }
 
 
     // 国家统计查询-查询列表数据
     bool queryCountryStats(QueryCondition& condition, std::vector<std::shared_ptr<CountryStatsInfo>>& countryStatsList, int& total) {
+        std::lock_guard<std::mutex> lock(readDbMutex);
 
         sqlite3_stmt* stmt = nullptr, * countStmt = nullptr;
         std::string sql = StatsSQL::buildCountryStatsQuerySQL(condition);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        auto queryStart = std::chrono::steady_clock::now();
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
 
@@ -401,8 +437,8 @@ public:
 
         // 再查询总数total
         sql = StatsSQL::buildCountryStatsQuerySQL_Count(condition);
-        if (sqlite3_prepare_v2(db, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
-            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        if (sqlite3_prepare_v2(readDb, sql.c_str(), -1, &countStmt, nullptr) != SQLITE_OK) {
+            std::cout << "Failed to prepare statement: " << sqlite3_errmsg(readDb) << std::endl;
             return false;
         }
         // 执行查询并获取结果
@@ -411,11 +447,63 @@ public:
         }
 
         sqlite3_finalize(countStmt);
+        logSlowQuery("queryCountryStats", queryStart, sql);
         return true;
     }
 
 
 private:
+
+    static void bindText(sqlite3_stmt* stmt, int index, const std::string& value) {
+        sqlite3_bind_text(stmt, index, value.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    static void bindPacketQueryCondition(sqlite3_stmt* stmt, const QueryCondition& condition) {
+        bindText(stmt, 1, condition.ip);
+        bindText(stmt, 2, condition.ip);
+        bindText(stmt, 3, condition.ip);
+        sqlite3_bind_int(stmt, 4, condition.port);
+        sqlite3_bind_int(stmt, 5, condition.port);
+        sqlite3_bind_int(stmt, 6, condition.port);
+        bindText(stmt, 7, condition.proto);
+        bindText(stmt, 8, condition.proto);
+        sqlite3_bind_int(stmt, 9, condition.session_id);
+        sqlite3_bind_int(stmt, 10, condition.session_id);
+    }
+
+    static void bindSessionQueryCondition(sqlite3_stmt* stmt, const QueryCondition& condition) {
+        const std::string protoLike = "%" + condition.proto + "%";
+        bindText(stmt, 1, condition.proto);
+        bindText(stmt, 2, protoLike);
+        bindText(stmt, 3, protoLike);
+        bindText(stmt, 4, condition.ip);
+        bindText(stmt, 5, condition.ip);
+        bindText(stmt, 6, condition.ip);
+        sqlite3_bind_int(stmt, 7, condition.port);
+        sqlite3_bind_int(stmt, 8, condition.port);
+        sqlite3_bind_int(stmt, 9, condition.port);
+        sqlite3_bind_int(stmt, 10, condition.session_id);
+        sqlite3_bind_int(stmt, 11, condition.session_id);
+    }
+
+    static void bindIPStatsQueryCondition(sqlite3_stmt* stmt, const QueryCondition& condition) {
+        const std::string protoLike = "%" + condition.proto + "%";
+        bindText(stmt, 1, condition.proto);
+        bindText(stmt, 2, protoLike);
+        bindText(stmt, 3, protoLike);
+        bindText(stmt, 4, condition.ip);
+        bindText(stmt, 5, condition.ip);
+        sqlite3_bind_int(stmt, 6, condition.port);
+        sqlite3_bind_int(stmt, 7, condition.port);
+    }
+
+    static void logSlowQuery(const char* name, std::chrono::steady_clock::time_point started, const std::string& sql) {
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started).count();
+        if (elapsedMs >= 200) {
+            LOG_F(WARNING, "[SLOW SQL] %s took %lld ms: %s", name, static_cast<long long>(elapsedMs), sql.c_str());
+        }
+    }
 
     // 创建数据包的表
     bool createPacketTable() {
@@ -465,6 +553,11 @@ private:
             LOG_F(ERROR, "Failed to create table t_packets");
             return false;
         }
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_packets_src_ip ON t_packets(src_ip);", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_packets_dst_ip ON t_packets(dst_ip);", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_packets_ports ON t_packets(src_port, dst_port);", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_packets_session ON t_packets(belong_session_id);", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_packets_protocol ON t_packets(protocol);", nullptr, nullptr, nullptr);
 
         return true;
     }
@@ -497,6 +590,9 @@ private:
         if (sqlite3_exec(db, createTableSQL.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK) {
             throw std::runtime_error("Failed to create table t_sessions");
         }
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_sessions_ip1 ON t_sessions(ip1);", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_sessions_ip2 ON t_sessions(ip2);", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_sessions_proto ON t_sessions(trans_proto, app_proto);", nullptr, nullptr, nullptr);
 
         // 清空表数据
         std::string clearTableSQL = "DELETE FROM t_sessions;";
@@ -507,6 +603,10 @@ private:
 
 private:
     sqlite3* db = nullptr; // SQLite 数据库连接
+    sqlite3* readDb = nullptr;
+    std::string dbName;
+    std::mutex dbMutex;
+    std::mutex readDbMutex;
 };
 
 

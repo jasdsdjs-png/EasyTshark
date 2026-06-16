@@ -86,10 +86,10 @@ const columns: TableColumnProps[] = [
     render: (_, record) => (
       <div
         onClick={(e) => {
-          const params = new URLSearchParams({ ...record }).toString();
           e.stopPropagation();
           localStorage.setItem(`row${record.session_id}`, JSON.stringify(record))
-          window.open(`/detail?sessionId=${record.session_id}`)
+          const detailUrl = `${window.location.origin}${window.location.pathname}#/detail?sessionId=${record.session_id}`;
+          window.open(detailUrl)
         }}
       >
         <Button type='outline' size='mini'>会话详情</Button>

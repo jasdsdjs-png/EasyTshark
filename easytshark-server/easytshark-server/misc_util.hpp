@@ -26,6 +26,7 @@ using namespace rapidjson;
 
 #ifdef _WIN32
 #include <windows.h>
+#include <shellapi.h>
 #include <direct.h>
 #include <dbghelp.h>
 #pragma comment(lib, "dbghelp.lib")

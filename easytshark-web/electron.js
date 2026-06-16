@@ -133,8 +133,10 @@ async function checkNpcap() {
 
 // 启动easytshark-server进程
 function startTsharkServer() {
-  const tsharkServerPath = path.join(process.resourcesPath, 'easytshark-server.exe')
-  //const tsharkServerPath = 'D:/easytshark-server/easytshark-server/x64/Debug/easytshark-server.exe'
+  const mode = process.argv[2];
+  const tsharkServerPath = mode === 'dev'
+    ? path.resolve(__dirname, '../easytshark-server/x64/Debug/easytshark-server.exe')
+    : path.join(process.resourcesPath, 'easytshark-server.exe')
   const args = ['--uipid=' + process.pid]; // 指定其前端进程的PID
   
   console.log('tsharkServerPath: ', tsharkServerPath)

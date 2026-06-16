@@ -5,6 +5,7 @@
 #include "../tshark_datatype.h"
 #include "../tshark_errorcode.hpp"
 #include "../tshark_manager.h"
+#include "../distributed_runtime.h"
 #include "rapidjson/document.h"
 #include "rapidjson/writer.h"
 #include "rapidjson/prettywriter.h"
@@ -15,15 +16,18 @@
 // 基类Controller
 class BaseController {
 public:
-    BaseController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager)
+    BaseController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager,
+        std::shared_ptr<DistributedRuntime> distributedRuntime = nullptr)
         :__server(server)
-        ,__tsharkManager(tsharkManager) {
+        ,__tsharkManager(tsharkManager)
+        ,__distributedRuntime(distributedRuntime) {
     }
     virtual void registerRoute() = 0;
 
 protected:
     httplib::Server& __server;
     std::shared_ptr<TsharkManager> __tsharkManager;
+    std::shared_ptr<DistributedRuntime> __distributedRuntime;
 
 public:
     // 从URL中提取整数参数

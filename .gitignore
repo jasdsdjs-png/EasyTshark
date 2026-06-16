@@ -8,6 +8,7 @@ easytshark-web/dist/
 # Logs
 *.log
 devserver.*.log
+output/
 
 # Runtime data
 *.pcap
@@ -22,6 +23,7 @@ devserver.*.log
 **/Release/
 **/x64/
 **/x86/
+easytshark-server/tests/out/
 *.obj
 *.pdb
 *.ilk

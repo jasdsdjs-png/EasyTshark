@@ -1,0 +1,112 @@
+syntax = "proto3";
+
+package easytshark.grpc;
+
+service WorkerRegistry {
+  rpc RegisterWorker(WorkerInfo) returns (RegisterReply);
+  rpc Heartbeat(WorkerHeartbeat) returns (HeartbeatReply);
+}
+
+service PacketAnalyzeService {
+  rpc AnalyzePacketRange(AnalyzeTask) returns (stream AnalyzeBatch);
+  rpc AnalyzeChunk(stream PcapChunk) returns (stream AnalyzeBatch);
+  rpc CancelTask(TaskId) returns (CancelReply);
+}
+
+message WorkerInfo {
+  string worker_id = 1;
+  string address = 2;
+  uint32 cpu_count = 3;
+  uint32 max_parallel_tasks = 4;
+}
+
+message RegisterReply {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message WorkerHeartbeat {
+  string worker_id = 1;
+  uint64 parsed_packets = 2;
+  uint32 running_tasks = 3;
+}
+
+message HeartbeatReply {
+  bool accepted = 1;
+  string message = 2;
+}
+
+message AnalyzeTask {
+  string task_id = 1;
+  string pcap_path = 2;
+  uint32 start_frame = 3;
+  uint32 end_frame = 4;
+}
+
+message PcapChunk {
+  string task_id = 1;
+  string chunk_id = 2;
+  uint32 sequence = 3;
+  uint32 start_frame = 4;
+  uint32 end_frame = 5;
+  bytes payload = 6;
+  bool eof = 7;
+}
+
+message PacketRecord {
+  uint32 frame_number = 1;
+  double time = 2;
+  uint32 cap_len = 3;
+  uint32 len = 4;
+  string src_mac = 5;
+  string dst_mac = 6;
+  string src_ip = 7;
+  string src_location = 8;
+  uint32 src_port = 9;
+  string dst_ip = 10;
+  string dst_location = 11;
+  uint32 dst_port = 12;
+  string trans_proto = 13;
+  string protocol = 14;
+  string info = 15;
+  uint32 file_offset = 16;
+  uint32 belong_session_id = 17;
+}
+
+message SessionRecord {
+  uint32 session_id = 1;
+  string ip1 = 2;
+  uint32 ip1_port = 3;
+  string ip1_location = 4;
+  string ip2 = 5;
+  uint32 ip2_port = 6;
+  string ip2_location = 7;
+  string trans_proto = 8;
+  string app_proto = 9;
+  double start_time = 10;
+  double end_time = 11;
+  uint32 ip1_send_packets_count = 12;
+  uint32 ip1_send_bytes_count = 13;
+  uint32 ip2_send_packets_count = 14;
+  uint32 ip2_send_bytes_count = 15;
+  uint32 packet_count = 16;
+  uint32 total_bytes = 17;
+}
+
+message AnalyzeBatch {
+  string task_id = 1;
+  uint64 sequence = 2;
+  repeated PacketRecord packets = 3;
+  repeated SessionRecord sessions = 4;
+  uint32 progress = 5;
+  string error_message = 6;
+}
+
+message TaskId {
+  string task_id = 1;
+}
+
+message CancelReply {
+  bool canceled = 1;
+  string message = 2;
+}

@@ -1,4 +1,5 @@
 #include <iostream>
+#include <algorithm>
 #include "loguru/loguru.hpp"
 #include "httplib/httplib.h"
 #include "rapidjson/document.h"
@@ -13,8 +14,24 @@
 #include "controller/adaptor_controller.hpp"
 #include "controller/session_controller.hpp"
 #include "controller/stats_controller.hpp"
+#include "distributed_runtime.h"
 
 std::shared_ptr<TsharkManager> g_ptrTsharkManager;
+std::shared_ptr<DistributedRuntime> g_ptrDistributedRuntime;
+
+std::string getArgValue(int argc, char* argv[], const std::string& name, const std::string& defaultValue = "") {
+    const std::string prefix = name + "=";
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == name) {
+            return "true";
+        }
+        if (arg.find(prefix) == 0) {
+            return arg.substr(prefix.size());
+        }
+    }
+    return defaultValue;
+}
 
 
 httplib::Server::HandlerResponse before_request(const httplib::Request& req, httplib::Response& res) {
@@ -29,12 +46,28 @@ httplib::Server::HandlerResponse before_request(const httplib::Request& req, htt
     return httplib::Server::HandlerResponse::Unhandled;
 }
 
+void setCorsHeaders(const httplib::Request& req, httplib::Response& res) {
+    std::string origin;
+    auto originIt = req.headers.find("Origin");
+    if (originIt != req.headers.end()) {
+        origin = originIt->second;
+    }
+
+    if (origin == "http://localhost:3000" || origin == "http://127.0.0.1:3000") {
+        res.set_header("Access-Control-Allow-Origin", origin);
+    }
+    else {
+        res.set_header("Access-Control-Allow-Origin", "http://localhost:3000");
+    }
+
+    res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT");
+    res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+    res.set_header("Access-Control-Allow-Credentials", "true");
+}
+
 void after_response(const httplib::Request& req, httplib::Response& res) {
     if (req.method != "OPTIONS") {
-        res.set_header("Access-Control-Allow-Origin", "http://localhost:3000");
-        res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT");
-        res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
-        res.set_header("Access-Control-Allow-Credentials", "true");
+        setCorsHeaders(req, res);
     }
     LOG_F(INFO, "Received response with status %d", res.status);
 }
@@ -54,18 +87,31 @@ int main(int argc, char* argv[]) {
 
     InitLog(argc, argv);
 
+    std::string currentExePath = ProcessUtil::getExecutableDir();
+    g_ptrDistributedRuntime = std::make_shared<DistributedRuntime>(currentExePath);
+
+    std::string role = getArgValue(argc, argv, "--role", "gateway");
+    if (role == "worker") {
+        std::string listenAddress = getArgValue(argc, argv, "--listen", "127.0.0.1:50051");
+        if (!g_ptrDistributedRuntime->startWorker(listenAddress)) {
+            return -1;
+        }
+        LOG_F(INFO, "EasyTshark gRPC worker mode is running on %s", listenAddress.c_str());
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(60));
+        }
+        return 0;
+    }
+
 
     // 提取UI进程参数
-    std::string paramName = "--uipid=";
-    if (argc < 2 || strstr(argv[1], paramName.c_str()) == nullptr) {
-        LOG_F(ERROR, "usage: tshark_server --uipid=xxx");
+    std::string pidParam = getArgValue(argc, argv, "--uipid", "");
+    if (pidParam.empty()) {
+        LOG_F(ERROR, "usage: tshark_server --uipid=xxx [--workers=host:port,...]");
         return -1;
     }
 
-    std::string pidParam = argv[1];
-    auto pos1 = pidParam.find(paramName) + paramName.size();
-    auto pos2 = pidParam.find(" ", pos1);
-    PID_T pid = std::stoi(pidParam.substr(pos1, pos2));
+    PID_T pid = std::stoi(pidParam);
     if (!ProcessUtil::isProcessRunning(pid)) {
         LOG_F(ERROR, "UI进程不存在，tshark_server将退出");
         return -1;
@@ -83,16 +129,20 @@ int main(int argc, char* argv[]) {
      });
 
 
-    std::string currentExePath = ProcessUtil::getExecutableDir();
     g_ptrTsharkManager = std::make_shared<TsharkManager>(currentExePath);
+    std::string workers = getArgValue(argc, argv, "--workers", "");
+    if (!workers.empty()) {
+        g_ptrDistributedRuntime->configureWorkers(SplitWorkerAddresses(workers));
+    }
 
     // 创建一个 HTTP 服务器对象
     httplib::Server server;
+    server.new_task_queue = [] {
+        auto workerCount = std::max<size_t>(4, std::thread::hardware_concurrency());
+        return new httplib::ThreadPool(workerCount, workerCount * 128);
+    };
     server.Options(".*", [](const httplib::Request& req, httplib::Response& res) {
-        res.set_header("Access-Control-Allow-Origin", "http://localhost:3000");
-        res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT");
-        res.set_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
-        res.set_header("Access-Control-Allow-Credentials", "true");
+        setCorsHeaders(req, res);
         res.status = 200;
         });
 
@@ -103,9 +153,9 @@ int main(int argc, char* argv[]) {
 
     // 创建Controller并注册路由
     std::vector<std::shared_ptr<BaseController>> controllerList;
-    controllerList.push_back(std::make_shared<PacketController>(server, g_ptrTsharkManager));
+    controllerList.push_back(std::make_shared<PacketController>(server, g_ptrTsharkManager, g_ptrDistributedRuntime));
     controllerList.push_back(std::make_shared<SessionController>(server, g_ptrTsharkManager));
-    controllerList.push_back(std::make_shared<AdaptorController>(server, g_ptrTsharkManager));
+    controllerList.push_back(std::make_shared<AdaptorController>(server, g_ptrTsharkManager, g_ptrDistributedRuntime));
     controllerList.push_back(std::make_shared<StatsController>(server, g_ptrTsharkManager));
     for (auto controller : controllerList) {
         controller->registerRoute();
