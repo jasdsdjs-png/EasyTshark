@@ -1,6 +1,4 @@
-﻿//
-// Created by xuanyuan on 2024/12/6.
-//
+
 
 #ifndef TSHARK_SERVER_TSHARK_ERRORCODE_HPP
 #define TSHARK_SERVER_TSHARK_ERRORCODE_HPP
@@ -17,9 +15,11 @@
 #define ERROR_FILE_NOTFOUND     1007
 #define ERROR_FILE_SAVE_FAILED  1008
 
+// 后端错误码到用户可读提示的映射工具。
 class TsharkError {
 
 public:
+    // 根据错误码返回响应消息，未知错误码返回默认提示。
     static std::string getErrorMsg(int errorCode) {
         if (ERROR_MSG_MAP.find(errorCode) != ERROR_MSG_MAP.end()) {
             return ERROR_MSG_MAP[errorCode];

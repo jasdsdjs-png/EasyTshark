@@ -8,6 +8,8 @@
 #include "third_library/loguru/loguru.hpp"
 #include "tshark_command_service.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <iomanip>
@@ -94,28 +96,37 @@ void TsharkManager::reset() {
 }
 
 bool TsharkManager::analysisFile(std::string filePath) {
+    const auto analysisStarted = std::chrono::steady_clock::now();
     std::unique_lock<std::recursive_mutex> lock(workStatusLock);
     reset();
+    stopFlag = false;
+    workStatus = STATUS_ANALYSIS_FILE;
 
     currentFilePath = MiscUtil::getPcapNameByCurrentTimestamp();
     if (!convertToPcap(filePath, currentFilePath)) {
         LOG_F(ERROR, "convert to pcap failed");
+        workStatus = STATUS_IDLE;
+        stopFlag = true;
         return false;
     }
 
-    std::unique_ptr<FILE, decltype(&EASYTSHARK_FCLOSE)> pipe(commandService->openAnalysisPipe(currentFilePath), EASYTSHARK_FCLOSE);
+    std::unique_ptr<FILE, decltype(&EASYTSHARK_FCLOSE)> pipe(
+        commandService->openAnalysisPipe(currentFilePath, &analysisTsharkPid),
+        EASYTSHARK_FCLOSE
+    );
     if (!pipe) {
         std::cerr << "Failed to run tshark command!" << std::endl;
+        analysisTsharkPid = 0;
+        workStatus = STATUS_IDLE;
+        stopFlag = true;
         return false;
     }
 
-    workStatus = STATUS_ANALYSIS_FILE;
-    stopFlag = false;
     storageQueue->start(storage, stopFlag);
 
     uint32_t fileOffset = sizeof(PcapHeader);
     char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+    while (!stopFlag.load() && fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
         std::shared_ptr<Packet> packet = std::make_shared<Packet>();
         if (!PacketParser::parseLine(buffer, packet)) {
             LOG_F(ERROR, "tshark output parse error: %s", buffer);
@@ -130,12 +141,41 @@ bool TsharkManager::analysisFile(std::string filePath) {
         processPacket(packet);
     }
 
+    bool canceled = stopFlag.load();
     pipe.reset();
+    analysisTsharkPid = 0;
     storageQueue->stop(stopFlag);
     workStatus = STATUS_IDLE;
 
-    LOG_F(INFO, "analysis finished, packet count: %zu", sessionAggregator->packetCount());
-    return true;
+    const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - analysisStarted).count();
+    const uint64_t parsedPackets = static_cast<uint64_t>(sessionAggregator->packetCount());
+    lastAnalysisDurationMs = static_cast<uint64_t>(elapsedMs < 0 ? 0 : elapsedMs);
+    lastAnalysisPacketCount = parsedPackets;
+    lastAnalysisStoredPackets = storageQueue->storedPackets();
+    lastAnalysisPacketsPerSecond = elapsedMs > 0
+        ? static_cast<uint64_t>((parsedPackets * 1000ULL) / static_cast<uint64_t>(elapsedMs))
+        : parsedPackets;
+
+    LOG_F(INFO, "analysis finished, packet count: %llu, stored: %llu, elapsed_ms: %llu, pps: %llu",
+        static_cast<unsigned long long>(lastAnalysisPacketCount.load()),
+        static_cast<unsigned long long>(lastAnalysisStoredPackets.load()),
+        static_cast<unsigned long long>(lastAnalysisDurationMs.load()),
+        static_cast<unsigned long long>(lastAnalysisPacketsPerSecond.load()));
+    return !canceled;
+}
+
+void TsharkManager::requestStop() {
+    stopFlag = true;
+    if (storageQueue) {
+        storageQueue->notifyAll();
+    }
+    if (analysisTsharkPid != 0) {
+        ProcessUtil::Kill(analysisTsharkPid);
+    }
+    if (captureTsharkPid != 0) {
+        ProcessUtil::Kill(captureTsharkPid);
+    }
 }
 
 bool TsharkManager::startCapture(std::string adapterName) {
@@ -414,13 +454,31 @@ void TsharkManager::writeMetricsJson(rapidjson::Value& out, rapidjson::Document:
     out.AddMember("parsed_packets", static_cast<uint64_t>(storageQueue->parsedPackets()), allocator);
     out.AddMember("stored_packets", static_cast<uint64_t>(storageQueue->storedPackets()), allocator);
     out.AddMember("pending_packets", static_cast<uint64_t>(storageQueue->pendingPackets()), allocator);
+    out.AddMember("peak_pending_packets", static_cast<uint64_t>(storageQueue->peakPendingPackets()), allocator);
     out.AddMember("pending_sessions", static_cast<uint64_t>(storageQueue->pendingSessions()), allocator);
+    out.AddMember("peak_pending_sessions", static_cast<uint64_t>(storageQueue->peakPendingSessions()), allocator);
     out.AddMember("storage_wakeups", static_cast<uint64_t>(storageQueue->wakeups()), allocator);
     out.AddMember("storage_backpressure_waits", static_cast<uint64_t>(storageQueue->backpressureWaits()), allocator);
     out.AddMember("store_queue_limit", static_cast<uint64_t>(storageQueue->queueLimit()), allocator);
     out.AddMember("store_batch_limit", static_cast<uint64_t>(storageQueue->batchLimit()), allocator);
+    out.AddMember("last_analysis_duration_ms", static_cast<uint64_t>(lastAnalysisDurationMs.load()), allocator);
+    out.AddMember("last_analysis_packet_count", static_cast<uint64_t>(lastAnalysisPacketCount.load()), allocator);
+    out.AddMember("last_analysis_stored_packets", static_cast<uint64_t>(lastAnalysisStoredPackets.load()), allocator);
+    out.AddMember("last_analysis_packets_per_second", static_cast<uint64_t>(lastAnalysisPacketsPerSecond.load()), allocator);
     out.AddMember("packet_cache_size", static_cast<uint64_t>(sessionAggregator->packetCount()), allocator);
     out.AddMember("session_cache_size", static_cast<uint64_t>(sessionAggregator->sessionCount()), allocator);
+    {
+        std::shared_ptr<TsharkManager> active;
+        {
+            std::unique_lock<std::recursive_mutex> lock(activeAnalysisManagerLock);
+            active = activeAnalysisManager;
+        }
+        if (active) {
+            rapidjson::Value activeMetrics(rapidjson::kObjectType);
+            active->writeMetricsJson(activeMetrics, allocator);
+            out.AddMember("active_dataset", activeMetrics, allocator);
+        }
+    }
 }
 
 void TsharkManager::setActiveAnalysisManager(std::shared_ptr<TsharkManager> manager) {
@@ -432,3 +490,9 @@ std::shared_ptr<TsharkManager> TsharkManager::getActiveAnalysisManager() {
     std::unique_lock<std::recursive_mutex> lock(activeAnalysisManagerLock);
     return activeAnalysisManager;
 }
+
+
+
+
+
+

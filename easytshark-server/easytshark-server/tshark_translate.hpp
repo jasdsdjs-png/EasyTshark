@@ -1,4 +1,4 @@
-﻿#ifndef TSHARK_TRANSLATE_HPP
+#ifndef TSHARK_TRANSLATE_HPP
 #define TSHARK_TRANSLATE_HPP
 
 #include <unordered_map>

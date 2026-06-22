@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by xuanyuan on 2024/12/6.
 //
 
@@ -7,7 +7,7 @@
 #include "base_controller.hpp"
 #include "../proto_list.hpp"
 
-// 通信统计相关的接口
+// IP、协议、国家维度通信统计接口。
 class StatsController : public BaseController {
 public:
     StatsController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager)
@@ -15,6 +15,7 @@ public:
     {
     }
 
+    // 注册各类统计查询路由。
     virtual void registerRoute() {
 
         __server.Post("/api/getIPStatsList", [this](const httplib::Request& req, httplib::Response& res) {

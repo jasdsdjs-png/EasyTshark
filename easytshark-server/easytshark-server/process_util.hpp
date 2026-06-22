@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by xuanyuan on 24-10-19.
 //
 
@@ -82,7 +82,8 @@ public:
 //            int x = kill(pid, 0);
 //            if (x == 0) {
 //                ret = kill(pid, SIGTERM);
-//                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+//
+std::this_thread::sleep_for(std::chrono::milliseconds(1));
 //            } else {
 //                break;
 //            }
@@ -174,7 +175,7 @@ public:
             *pidOut = piProcInfo.dwProcessId;
         }
 
-        // 将管道的读端转换为 FILE* 并返回
+        // Converts the pipe read handle to FILE* and returns it.
         pipeFp = _fdopen(_open_osfhandle(reinterpret_cast<intptr_t>(hReadPipe), _O_RDONLY), "r");
         if (!pipeFp) {
             CloseHandle(hReadPipe);
@@ -407,3 +408,4 @@ public:
 
 
 #endif //PROCESSUTIL_H
+

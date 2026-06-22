@@ -1,4 +1,4 @@
-﻿
+
 
 #ifndef TSHARK_SERVER_SESSION_SQL_HPP
 #define TSHARK_SERVER_SESSION_SQL_HPP
@@ -9,8 +9,10 @@
 #include "../tshark_datatype.h"
 #include "loguru/loguru.hpp"
 
+// 会话查询 SQL 构造器。
 class SessionSQL {
 public:
+    // 构造会话分页查询 SQL。
     static std::string buildSessionQuerySQL(QueryCondition &condition) {
 
         std::string sql;
@@ -29,6 +31,7 @@ public:
         return sql;
     }
 
+    // 构造会话查询总数 SQL。
     static std::string buildSessionQuerySQL_Count(QueryCondition& condition) {
         std::string sql = buildSessionQuerySQL(condition);
         auto pos = sql.find("LIMIT");

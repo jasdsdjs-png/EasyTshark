@@ -1,5 +1,6 @@
 #include <iostream>
 #include <algorithm>
+#include <clocale>
 #include "loguru/loguru.hpp"
 #include "httplib/httplib.h"
 #include "rapidjson/document.h"
@@ -9,16 +10,20 @@
 
 #include "tshark_manager.h"
 #include "pagehelper.h"
-#include "loguru/loguru.hpp"
 #include "controller/packet_controller.hpp"
 #include "controller/adaptor_controller.hpp"
 #include "controller/session_controller.hpp"
 #include "controller/stats_controller.hpp"
 #include "distributed_runtime.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 std::shared_ptr<TsharkManager> g_ptrTsharkManager;
 std::shared_ptr<DistributedRuntime> g_ptrDistributedRuntime;
 
+// Reads a command-line option in --flag or --name=value form.
 std::string getArgValue(int argc, char* argv[], const std::string& name, const std::string& defaultValue = "") {
     const std::string prefix = name + "=";
     for (int i = 1; i < argc; i++) {
@@ -33,11 +38,33 @@ std::string getArgValue(int argc, char* argv[], const std::string& name, const s
     return defaultValue;
 }
 
+// Reads an unsigned size option and falls back when parsing fails.
+size_t getSizeArgValue(int argc, char* argv[], const std::string& name, size_t defaultValue) {
+    std::string value = getArgValue(argc, argv, name, "");
+    if (value.empty()) {
+        return defaultValue;
+    }
+    try {
+        return static_cast<size_t>(std::stoull(value));
+    }
+    catch (const std::exception&) {
+        return defaultValue;
+    }
+}
 
+// Configures the Windows console for UTF-8 log output.
+void configureUtf8Output() {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
+    setlocale(LC_ALL, ".UTF-8");
+}
+
+// Initializes per-request paging before route handlers run.
 httplib::Server::HandlerResponse before_request(const httplib::Request& req, httplib::Response& res) {
     LOG_F(INFO, "Request received for %s", req.path.c_str());
 
-    // 提取分页参数
     PageAndOrder* pageAndOrder = PageHelper::getPageAndOrder();
     pageAndOrder->pageNum = BaseController::getIntParam(req, "pageNum", 1);
     pageAndOrder->pageSize = BaseController::getIntParam(req, "pageSize", 100);
@@ -46,6 +73,7 @@ httplib::Server::HandlerResponse before_request(const httplib::Request& req, htt
     return httplib::Server::HandlerResponse::Unhandled;
 }
 
+// Applies CORS headers for the local React frontend.
 void setCorsHeaders(const httplib::Request& req, httplib::Response& res) {
     std::string origin;
     auto originIt = req.headers.find("Origin");
@@ -65,6 +93,7 @@ void setCorsHeaders(const httplib::Request& req, httplib::Response& res) {
     res.set_header("Access-Control-Allow-Credentials", "true");
 }
 
+// Adds post-route CORS headers and logs response status.
 void after_response(const httplib::Request& req, httplib::Response& res) {
     if (req.method != "OPTIONS") {
         setCorsHeaders(req, res);
@@ -72,70 +101,65 @@ void after_response(const httplib::Request& req, httplib::Response& res) {
     LOG_F(INFO, "Received response with status %d", res.status);
 }
 
+// Initializes Loguru and writes full logs to app.log.
 void InitLog(int argc, char* argv[]) {
-    // 初始化 Loguru
     loguru::init(argc, argv);
-
-    // 设置日志文件路径
     loguru::add_file("app.log", loguru::Append, loguru::Verbosity_MAX);
 }
 
-
 int main(int argc, char* argv[]) {
-
-    setlocale(LC_ALL, "zh_CN.UTF-8");
-
+    configureUtf8Output();
     InitLog(argc, argv);
 
     std::string currentExePath = ProcessUtil::getExecutableDir();
-    g_ptrDistributedRuntime = std::make_shared<DistributedRuntime>(currentExePath);
 
     std::string role = getArgValue(argc, argv, "--role", "gateway");
     if (role == "worker") {
-        std::string listenAddress = getArgValue(argc, argv, "--listen", "127.0.0.1:50051");
-        if (!g_ptrDistributedRuntime->startWorker(listenAddress)) {
-            return -1;
-        }
-        LOG_F(INFO, "EasyTshark gRPC worker mode is running on %s", listenAddress.c_str());
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::seconds(60));
-        }
-        return 0;
+        LOG_F(ERROR, "--role=worker has been removed. Use --analysis-workers=N for local C++ analysis concurrency.");
+        return -1;
     }
 
+    size_t analysisWorkers = getSizeArgValue(argc, argv, "--analysis-workers", 0);
+    size_t analysisQueueLimit = getSizeArgValue(argc, argv, "--analysis-queue", 64);
+    g_ptrDistributedRuntime = std::make_shared<DistributedRuntime>(currentExePath, analysisWorkers, analysisQueueLimit);
 
-    // 提取UI进程参数
+    // Reads the UI process id so the backend can exit with the UI.
     std::string pidParam = getArgValue(argc, argv, "--uipid", "");
     if (pidParam.empty()) {
-        LOG_F(ERROR, "usage: tshark_server --uipid=xxx [--workers=host:port,...]");
+        LOG_F(ERROR, "usage: tshark_server --uipid=xxx [--analysis-workers=N] [--analysis-queue=N]");
         return -1;
     }
 
     PID_T pid = std::stoi(pidParam);
     if (!ProcessUtil::isProcessRunning(pid)) {
-        LOG_F(ERROR, "UI进程不存在，tshark_server将退出");
+        LOG_F(ERROR, "UI process does not exist, tshark_server will exit");
         return -1;
     }
 
-    // 启动UI监控线程
+    // Watches the UI process and stops the HTTP service when the UI exits.
     std::thread uiMonitorThread([&]() {
         while (true) {
             if (!ProcessUtil::isProcessRunning(pid)) {
-                LOG_F(INFO, "检测到UI进程已退出");
+                LOG_F(INFO, "Detected UI process exit");
                 return;
             }
             std::this_thread::sleep_for(std::chrono::seconds(5));
         }
      });
 
-
     g_ptrTsharkManager = std::make_shared<TsharkManager>(currentExePath);
-    std::string workers = getArgValue(argc, argv, "--workers", "");
-    if (!workers.empty()) {
-        g_ptrDistributedRuntime->configureWorkers(SplitWorkerAddresses(workers));
+    std::string workerLabels = getArgValue(argc, argv, "--analysis-worker-labels", "");
+    if (workerLabels.empty()) {
+        workerLabels = getArgValue(argc, argv, "--workers", "");
+        if (!workerLabels.empty()) {
+            LOG_F(INFO, "--workers is deprecated; using it as local analysis worker labels only");
+        }
+    }
+    if (!workerLabels.empty()) {
+        g_ptrDistributedRuntime->configureWorkers(SplitWorkerAddresses(workerLabels));
     }
 
-    // 创建一个 HTTP 服务器对象
+    // Creates the HTTP server and gives it a bounded worker pool.
     httplib::Server server;
     server.new_task_queue = [] {
         auto workerCount = std::max<size_t>(4, std::thread::hardware_concurrency());
@@ -146,12 +170,10 @@ int main(int argc, char* argv[]) {
         res.status = 200;
         });
 
-    // 设置钩子函数
     server.set_pre_routing_handler(before_request);
     server.set_post_routing_handler(after_response);
 
-
-    // 创建Controller并注册路由
+    // Creates controllers and lets each controller register its routes.
     std::vector<std::shared_ptr<BaseController>> controllerList;
     controllerList.push_back(std::make_shared<PacketController>(server, g_ptrTsharkManager, g_ptrDistributedRuntime));
     controllerList.push_back(std::make_shared<SessionController>(server, g_ptrTsharkManager));
@@ -161,21 +183,18 @@ int main(int argc, char* argv[]) {
         controller->registerRoute();
     }
 
-    // 在另一个线程中启动HTTP服务
+    // Runs HTTP serving on a separate thread while main waits for the UI.
     std::thread serverThread([&]() {
         LOG_F(INFO, "tshark_server is running on http://127.0.0.1:8080");
         server.listen("127.0.0.1", 8080);
         });
 
-
-    // 等待UI进程退出
     uiMonitorThread.join();
 
-    // UI进程退出后，HTTP服务即关闭
     server.stop();
     serverThread.join();
 
-    // 如果还在抓包或者监控网卡流量，将其关闭
+    // Cleans up capture, analysis, and adapter-monitor resources.
     g_ptrTsharkManager->reset();
 
     return 0;

@@ -140,13 +140,12 @@ copy /Y "$(SolutionDir)..\easytshark-web\resources\tshark_win\ip2region.xdb" "$(
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="adapter_flow_monitor.cpp" />
+    <ClCompile Include="analysis_thread_pool.cpp" />
     <ClCompile Include="distributed_runtime.cpp" />
     <ClCompile Include="ip2region_util.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="packet_parser.cpp" />
     <ClCompile Include="pagehelper.cpp" />
-    <ClCompile Include="proto\easytshark_worker.grpc.pb.cc" />
-    <ClCompile Include="proto\easytshark_worker.pb.cc" />
     <ClCompile Include="session_aggregator.cpp" />
     <ClCompile Include="storage_queue.cpp" />
     <ClCompile Include="third_library\ip2region\xdb_bench.cc" />
@@ -158,6 +157,7 @@ copy /Y "$(SolutionDir)..\easytshark-web\resources\tshark_win\ip2region.xdb" "$(
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="adapter_flow_monitor.h" />
+    <ClInclude Include="analysis_thread_pool.h" />
     <ClInclude Include="controller\adaptor_controller.hpp" />
     <ClInclude Include="controller\base_controller.hpp" />
     <ClInclude Include="controller\packet_controller.hpp" />
@@ -166,8 +166,6 @@ copy /Y "$(SolutionDir)..\easytshark-web\resources\tshark_win\ip2region.xdb" "$(
     <ClInclude Include="distributed_runtime.h" />
     <ClInclude Include="pagehelper.h" />
     <ClInclude Include="proto_list.hpp" />
-    <ClInclude Include="proto\easytshark_worker.grpc.pb.h" />
-    <ClInclude Include="proto\easytshark_worker.pb.h" />
     <ClInclude Include="sql\packet_sql.hpp" />
     <ClInclude Include="sql\session_sql.hpp" />
     <ClInclude Include="sql\stats_sql.hpp" />

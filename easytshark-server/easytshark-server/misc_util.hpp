@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by xuanyuan on 24-10-20.
 //
 
@@ -68,7 +68,7 @@ public:
         // 格式化时间为 YY-MM-DD hh-mm-SS 格式
         strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", time_info);
 
-        // 返回 std::string
+        // 返回
         return std::string(buffer);
     }
 

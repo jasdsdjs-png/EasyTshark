@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by xuanyuan on 2024/12/7.
 //
 
@@ -12,10 +12,11 @@
 #include "loguru/loguru.hpp"
 #include "../pagehelper.h"
 
+// 统计接口使用的 SQL 构造器。
 class StatsSQL {
 public:
 
-    // IP统计
+    // 构造 IP 维度统计分页查询 SQL。
     static std::string buildIPStatsQuerySQL(QueryCondition &condition) {
 
         std::string sql;
@@ -82,6 +83,7 @@ public:
         return sql;
     }
 
+    // 构造 IP 维度统计总数 SQL。
     static std::string buildIPStatsQuerySQL_Count(QueryCondition &condition) {
         std::string sql = buildIPStatsQuerySQL(condition);
         auto pos = sql.find("LIMIT");
@@ -93,7 +95,7 @@ public:
         return countSql;
     }
 
-    // 协议统计
+    // 构造协议维度统计分页查询 SQL。
     static std::string buildProtoStatsQuerySQL(QueryCondition &condition) {
 
         std::string sql;
@@ -124,6 +126,7 @@ public:
         return sql;
     }
 
+    // 构造协议维度统计总数 SQL。
     static std::string buildProtoStatsQuerySQL_Count(QueryCondition &condition) {
         std::string sql = buildProtoStatsQuerySQL(condition);
         auto pos = sql.find("LIMIT");
@@ -136,7 +139,7 @@ public:
     }
 
 
-    // 国家统计
+    // 构造国家维度统计分页查询 SQL。
     static std::string buildCountryStatsQuerySQL(QueryCondition& condition) {
 
         std::string sql;
@@ -180,6 +183,7 @@ public:
         return sql;
     }
 
+    // 构造国家维度统计总数 SQL。
     static std::string buildCountryStatsQuerySQL_Count(QueryCondition& condition) {
         std::string sql = buildCountryStatsQuerySQL(condition);
         auto pos = sql.find("LIMIT");

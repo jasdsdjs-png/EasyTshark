@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by xuanyuan on 2024/12/6.
 //
 
@@ -6,7 +6,7 @@
 #define TSHARK_SERVER_SESSION_CONTROLLER_HPP
 #include "base_controller.hpp"
 
-// 会话相关的接口
+// 会话列表和会话数据流相关接口。
 class SessionController : public BaseController {
 public:
     SessionController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager)
@@ -14,6 +14,7 @@ public:
     {
     }
 
+    // 注册会话查询和会话数据流路由。
     virtual void registerRoute() {
 
         __server.Post("/api/getSessionList", [this](const httplib::Request& req, httplib::Response& res) {

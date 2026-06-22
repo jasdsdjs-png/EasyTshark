@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by xuanyuan on 2024/12/7.
 //
 
@@ -12,8 +12,10 @@
 #include "../pagehelper.h"
 #include "loguru/loguru.hpp"
 
+// 数据包查询 SQL 构造器。
 class PacketSQL {
 public:
+    // 构造数据包分页查询 SQL。
     static std::string buildPacketQuerySQL(QueryCondition &condition) {
 
         std::string sql;
@@ -32,6 +34,7 @@ public:
         return sql;
     }
 
+    // 构造数据包查询总数 SQL。
     static std::string buildPacketQuerySQL_Count(QueryCondition& condition) {
         std::string sql = buildPacketQuerySQL(condition);
         auto pos = sql.find("LIMIT");

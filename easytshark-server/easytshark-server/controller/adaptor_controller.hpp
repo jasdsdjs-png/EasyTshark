@@ -1,9 +1,9 @@
-﻿
+
 #ifndef TSHARK_SERVER_ADAPTOR_CONTROLLER_HPP
 #define TSHARK_SERVER_ADAPTOR_CONTROLLER_HPP
 #include "base_controller.hpp"
 
-// 网卡相关的接口
+// 网卡、抓包状态、后台任务和后端指标相关接口。
 class AdaptorController : public BaseController {
 public:
     AdaptorController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager,
@@ -12,6 +12,7 @@ public:
     {
     }
 
+    // 注册网卡、抓包和任务状态相关路由。
     virtual void registerRoute() {
 
         __server.Get("/api/getWorkStatus", [this](const httplib::Request& req, httplib::Response& res) {
@@ -208,6 +209,7 @@ public:
         }
     }
 
+    // 返回后端线程池、抓包管理器和分析运行时指标。
     void getBackendMetrics(const httplib::Request& req, httplib::Response& res) {
         try {
             rapidjson::Document dataDoc;
@@ -231,6 +233,7 @@ public:
         }
     }
 
+    // 返回兼容旧接口的 worker 标签列表。
     void getWorkerList(const httplib::Request& req, httplib::Response& res) {
         try {
             rapidjson::Document dataDoc;
@@ -248,6 +251,7 @@ public:
         }
     }
 
+    // 返回所有离线分析任务的当前状态。
     void getDistributedTaskStatus(const httplib::Request& req, httplib::Response& res) {
         try {
             rapidjson::Document dataDoc;

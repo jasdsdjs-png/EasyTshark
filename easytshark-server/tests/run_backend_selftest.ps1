@@ -28,8 +28,13 @@ if (-not $vcvars) {
 }
 
 $source = Join-Path $PSScriptRoot "backend_selftest.cpp"
+$threadPool = Join-Path $serverRoot "analysis_thread_pool.cpp"
 $parser = Join-Path $serverRoot "packet_parser.cpp"
 $aggregator = Join-Path $serverRoot "session_aggregator.cpp"
+$storageQueue = Join-Path $serverRoot "storage_queue.cpp"
+$pageHelper = Join-Path $serverRoot "pagehelper.cpp"
+$sqlite = Join-Path $serverRoot "third_library\sqlite3\sqlite3.c"
+$loguru = Join-Path $serverRoot "third_library\loguru\loguru.cpp"
 $exe = Join-Path $outDir "backend_selftest.exe"
 
 $compile = @(
@@ -40,11 +45,18 @@ $compile = @(
     "/std:c++17",
     "/EHsc",
     "/utf-8",
+    "/DNOMINMAX",
     "/I`"$serverRoot`"",
     "/I`"$serverRoot\third_library`"",
     "`"$source`"",
+    "`"$threadPool`"",
     "`"$parser`"",
     "`"$aggregator`"",
+    "`"$storageQueue`"",
+    "`"$pageHelper`"",
+    "`"$sqlite`"",
+    "`"$loguru`"",
+    "shlwapi.lib",
     "/Fe:`"$exe`""
 ) -join " "
 
@@ -54,3 +66,4 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & $exe
+

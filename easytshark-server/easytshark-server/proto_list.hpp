@@ -1,4 +1,4 @@
-﻿#ifndef PROTO_LIST_HPP
+#ifndef PROTO_LIST_HPP
 #define PROTO_LIST_HPP
 
 #include <string>

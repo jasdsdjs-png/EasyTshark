@@ -7,7 +7,7 @@ import Capture from '../components/Capture.tsx';
 
 const HomePage = () => {
   const history = useHistory();
-  const fileInputRef = useRef(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [cap, setCap] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -34,7 +34,7 @@ const HomePage = () => {
         return;
       }
 
-      if (task.status === 'FAILED') {
+      if (task.status === 'FAILED' || task.status === 'CANCELED') {
         throw new Error(task.message || 'analysis task failed');
       }
 
@@ -62,34 +62,8 @@ const HomePage = () => {
     }
   };
 
-  const handleSelectFile = async () => {
-    try {
-      if (!(window as any).electronAPI?.openFileDialog) {
-        fileInputRef.current?.click();
-        return;
-      }
-
-      const selectedFilePath = await (window as any).electronAPI.openFileDialog();
-      if (selectedFilePath) {
-        setCap(false);
-        setLoading(true);
-        setAnalysisTip('提交分析任务...');
-        try {
-          await apiGet('/api/stopMonitorAdaptersFlowTrend');
-          const result = await apiPost('/api/analysisTasks', { filePath: selectedFilePath });
-          await waitForAnalysisTask(result.data.taskId);
-          history.push('/data/dataPacket/all');
-        } catch (error) {
-          Message.error('文件分析失败');
-          console.error('analysis file failed', error);
-        } finally {
-          setLoading(false);
-          setAnalysisTip('');
-        }
-      }
-    } catch (error) {
-      console.error('file select failed', error);
-    }
+  const handleSelectFile = () => {
+    fileInputRef.current?.click();
   };
 
   const handleFileInputChange = (event) => {
@@ -119,7 +93,7 @@ const HomePage = () => {
         />
         <div
           className={`input-file ${dragging ? 'dragging' : ''}`}
-          onClick={() => handleSelectFile()}
+          onClick={handleSelectFile}
           onDragOver={(event) => {
             event.preventDefault();
             setDragging(true);

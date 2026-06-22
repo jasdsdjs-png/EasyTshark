@@ -27,6 +27,8 @@ void StorageQueue::clear() {
     sessionsToStore.clear();
     pendingPacketGauge = 0;
     pendingSessionGauge = 0;
+    peakPendingPacketGauge = 0;
+    peakPendingSessionGauge = 0;
     parsedPacketsCount = 0;
     storedPacketsCount = 0;
     storageWakeups = 0;
@@ -40,12 +42,17 @@ void StorageQueue::enqueue(std::shared_ptr<Packet> packet, std::shared_ptr<Sessi
             storageBackpressureWaits++;
             cv.wait_for(queueLock, std::chrono::milliseconds(200));
         }
+        if (stopFlag.load()) {
+            return;
+        }
         packetsToStore.push_back(packet);
         if (session) {
             sessionsToStore.insert(session);
         }
         pendingPacketGauge = packetsToStore.size();
         pendingSessionGauge = sessionsToStore.size();
+        peakPendingPacketGauge = (std::max)(peakPendingPacketGauge.load(), pendingPacketGauge.load());
+        peakPendingSessionGauge = (std::max)(peakPendingSessionGauge.load(), pendingSessionGauge.load());
     }
     parsedPacketsCount++;
     cv.notify_one();
@@ -77,6 +84,14 @@ size_t StorageQueue::pendingPackets() const {
 
 size_t StorageQueue::pendingSessions() const {
     return pendingSessionGauge.load();
+}
+
+size_t StorageQueue::peakPendingPackets() const {
+    return peakPendingPacketGauge.load();
+}
+
+size_t StorageQueue::peakPendingSessions() const {
+    return peakPendingSessionGauge.load();
 }
 
 size_t StorageQueue::queueLimit() const {
@@ -120,7 +135,7 @@ bool StorageQueue::drainOnce() {
             return false;
         }
 
-        size_t batchSize = std::min(maxStoreBatchSize, packetsToStore.size());
+        size_t batchSize = (std::min)(maxStoreBatchSize, packetsToStore.size());
         packetBatch.insert(packetBatch.end(), packetsToStore.begin(), packetsToStore.begin() + batchSize);
         packetsToStore.erase(packetsToStore.begin(), packetsToStore.begin() + batchSize);
 
@@ -140,3 +155,6 @@ bool StorageQueue::drainOnce() {
     cv.notify_all();
     return true;
 }
+
+
+

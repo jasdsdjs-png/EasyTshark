@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { Button, Message, Popover } from '@arco-design/web-react';
-import { IconFile, IconHome, IconPlayCircle, IconRecordStop, IconSave } from '@arco-design/web-react/icon';
+import { IconHome, IconPlayCircle, IconRecordStop } from '@arco-design/web-react/icon';
 import Capture from './Capture.tsx';
-import { apiGet, apiPost, apiUploadFile } from '../Api.ts';
+import { apiGet } from '../Api.ts';
 
 import "../style/global.css"
 
@@ -16,8 +16,6 @@ function Navbar({ onUpdateData = null }) {
   const [stopLoading, setStopLoading] = useState(false)
   const [workStatus, setWorkStatus] = useState(STATUS_IDLE)
   const [poperVisible, setPoperVisible] = useState(false)
-  const [fileLoading, setFileLoading] = useState(false)
-  const fileInputRef = useRef(null)
 
   const history = useHistory();
 
@@ -33,7 +31,7 @@ function Navbar({ onUpdateData = null }) {
   const stopCapture = async () => {
     setStopLoading(true)
     await apiGet('/api/stopCapture')
-    Message.info('停止抓包!');
+    Message.info('已停止抓包');
     setStopLoading(false)
     checkStatus()
   };
@@ -46,81 +44,12 @@ function Navbar({ onUpdateData = null }) {
     }
   }
 
-  const handleSelectFile = async () => {
-    try {
-      if (!(window as any).electronAPI?.openFileDialog) {
-        fileInputRef.current?.click()
-        return
-      }
-
-      const selectedFilePath = await (window as any).electronAPI.openFileDialog()
-      if (selectedFilePath) {
-        setFileLoading(true)
-        try {
-          await apiPost('/api/analysisFile', { filePath: selectedFilePath })
-          if (onUpdateData != null) onUpdateData()
-        } catch (error) {
-          Message.error('文件分析失败')
-          console.error('analysis file failed', error)
-        } finally {
-          setFileLoading(false)
-        }
-      }
-    } catch (error) {
-      console.error('file select failed', error);
-    }
-  };
-
-  const handleUploadFile = async (event) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-
-    setFileLoading(true)
-    try {
-      await apiUploadFile('/api/uploadAnalysisFile', file)
-      if (onUpdateData != null) onUpdateData()
-    } catch (error) {
-      Message.error('文件分析失败')
-      console.error('upload analysis file failed', error)
-    } finally {
-      setFileLoading(false)
-    }
-  }
-
-  const saveFile = async () => {
-    try {
-      if (!(window as any).electronAPI?.showSavePath) {
-        Message.warning('浏览器模式暂不支持保存到指定路径，请使用 Electron 客户端')
-        return
-      }
-
-      const selectedFilePath = await (window as any).electronAPI.showSavePath()
-      if (selectedFilePath) {
-        try {
-          await apiPost('/api/savePacket', { savePath: selectedFilePath, filter: '' })
-          Message.success('保存成功')
-        } catch {
-        }
-      }
-    } catch (error) {
-      console.error('save file failed', error);
-    }
-  }
-
   useEffect(() => {
     checkStatus()
   }, [])
 
   return (
     <div id="nav-bar" style={{ padding: 10 }}>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pcap,.cap,.pcapng"
-        style={{ display: 'none' }}
-        onChange={handleUploadFile}
-      />
       <Button type="primary" onClick={goHome} status='warning' icon={<IconHome />} disabled={workStatus !== STATUS_IDLE}>首页</Button>
 
       <Popover
@@ -141,8 +70,6 @@ function Navbar({ onUpdateData = null }) {
       </Popover>
 
       <Button type="primary" status="danger" onClick={stopCapture} loading={stopLoading} icon={<IconRecordStop />} disabled={[STATUS_IDLE, STATUS_ANALYSIS_FILE, STATUS_MONITORING].includes(workStatus)}>停止抓包</Button>
-      <Button type="primary" onClick={handleSelectFile} loading={fileLoading} icon={<IconFile />} disabled={workStatus !== STATUS_IDLE}>分析文件</Button>
-      <Button type="primary" onClick={saveFile} icon={<IconSave />}>保存文件</Button>
     </div>
   );
 }

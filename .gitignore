@@ -31,9 +31,12 @@ easytshark-server/tests/out/
 *.exp
 *.tlog
 *.recipe
+*.user
 
 # OS/editor files
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+local-artifacts/
+

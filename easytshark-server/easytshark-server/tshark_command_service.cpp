@@ -127,11 +127,11 @@ const std::string& TsharkCommandService::editcapPath() const {
     return editcapExePath;
 }
 
-FILE* TsharkCommandService::openAnalysisPipe(const std::string& pcapPath) {
+FILE* TsharkCommandService::openAnalysisPipe(const std::string& pcapPath, PID_T* pidOut) {
     std::vector<std::string> args = { tsharkExePath, "-r", pcapPath };
     auto fields = PacketParser::getTsharkFieldArgs();
     args.insert(args.end(), fields.begin(), fields.end());
-    return ProcessUtil::PopenEx(buildCommand(args));
+    return ProcessUtil::PopenEx(buildCommand(args), pidOut);
 }
 
 FILE* TsharkCommandService::openCapturePipe(const std::string& adapterName, const std::string& outputPath, PID_T* pidOut) {
@@ -153,6 +153,11 @@ bool TsharkCommandService::convertToPcap(const std::string& inputFile, const std
     std::string command = buildCommand({ editcapExePath, "-F", "pcap", inputFile, outputFile });
     if (!ProcessUtil::Exec(command)) {
         LOG_F(ERROR, "Failed to convert to pcap format, command: %s", command.c_str());
+        return false;
+    }
+
+    if (!MiscUtil::fileExists(outputFile)) {
+        LOG_F(ERROR, "editcap reported success but output file is missing: %s", outputFile.c_str());
         return false;
     }
 
@@ -463,3 +468,4 @@ std::string TsharkCommandService::quoteArg(const std::string& arg) const {
     quoted += "\"";
     return quoted;
 }
+

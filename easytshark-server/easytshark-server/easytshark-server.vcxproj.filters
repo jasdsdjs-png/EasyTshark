@@ -18,6 +18,9 @@
     <ClCompile Include="adapter_flow_monitor.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="analysis_thread_pool.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="ip2region_util.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -57,15 +60,12 @@
     <ClCompile Include="distributed_runtime.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="proto\easytshark_worker.grpc.pb.cc">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="proto\easytshark_worker.pb.cc">
-      <Filter>源文件</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="adapter_flow_monitor.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="analysis_thread_pool.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ip2region_util.h">
@@ -279,12 +279,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="distributed_runtime.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="proto\easytshark_worker.grpc.pb.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="proto\easytshark_worker.pb.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

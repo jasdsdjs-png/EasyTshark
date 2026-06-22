@@ -1,4 +1,4 @@
-﻿
+
 #ifndef TSHARK_SERVER_BASE_CONTROLLER_HPP
 #define TSHARK_SERVER_BASE_CONTROLLER_HPP
 #include "httplib/httplib.h"
@@ -11,9 +11,11 @@
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 
+#include <iostream>
+#include <limits>
 #include <memory>
 
-// 基类Controller
+// HTTP Controller 基类，提供路由注册约定和统一 JSON 响应工具。
 class BaseController {
 public:
     BaseController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager,
@@ -22,6 +24,7 @@ public:
         ,__tsharkManager(tsharkManager)
         ,__distributedRuntime(distributedRuntime) {
     }
+    // 注册当前 Controller 管理的 HTTP 路由。
     virtual void registerRoute() = 0;
 
 protected:
@@ -30,18 +33,28 @@ protected:
     std::shared_ptr<DistributedRuntime> __distributedRuntime;
 
 public:
-    // 从URL中提取整数参数
+    // 从 URL 查询参数中提取整数，缺失时使用默认值。
     static int getIntParam(const httplib::Request &req, std::string paramName, int defaultValue = 0) {
-
-        int value = defaultValue;
         auto it = req.params.find(paramName);
-        if (it != req.params.end()) {
-            value = std::stoi(it->second);
+        if (it == req.params.end()) {
+            return defaultValue;
         }
-        return value;
+        try {
+            size_t consumed = 0;
+            long parsed = std::stol(it->second, &consumed, 10);
+            if (consumed != it->second.size()
+                || parsed < std::numeric_limits<int>::min()
+                || parsed > std::numeric_limits<int>::max()) {
+                return defaultValue;
+            }
+            return static_cast<int>(parsed);
+        }
+        catch (const std::exception&) {
+            return defaultValue;
+        }
     }
 
-    // 从URL中提取字符串参数
+    // 从 URL 查询参数中提取字符串，缺失时使用默认值。
     static std::string getStringParam(const httplib::Request &req, std::string paramName, std::string defaultValue = "") {
         std::string value = defaultValue;
         auto it = req.params.find(paramName);
@@ -53,7 +66,7 @@ public:
 
 protected:
 
-    // 使用模板的形式返回数据列表
+    // 以统一分页列表格式返回数据数组。
     template<typename Data>
     void sendDataList(httplib::Response &res, std::vector<std::shared_ptr<Data>>& dataList, int total) {
         /**
@@ -93,7 +106,7 @@ protected:
         res.set_content(buffer.GetString(), "application/json");
     }
 
-    // 成功响应，返回JSON内容
+    // 以统一成功格式返回 JSON 对象。
     void sendJsonResponse(httplib::Response& res, rapidjson::Document& dataDoc) {
         /**
          * 返回数据格式：
@@ -118,7 +131,7 @@ protected:
     }
 
 
-    // 返回成功响应，但没有数据
+    // 返回不带 data 字段的成功响应。
     void sendSuccessResponse(httplib::Response& res) {
         rapidjson::Document resDoc;
         rapidjson::Document::AllocatorType& allocator = resDoc.GetAllocator();
@@ -134,7 +147,7 @@ protected:
     }
 
 
-    // 发生错误响应
+    // 按错误码返回统一错误响应。
     void sendErrorResponse(httplib::Response &res, int errorCode) {
         rapidjson::Document resDoc;
         rapidjson::Document::AllocatorType& allocator = resDoc.GetAllocator();
@@ -149,7 +162,7 @@ protected:
         res.set_content(buffer.GetString(), "application/json");
     }
 
-    // 提取请求中的参数
+    // 从请求体 JSON 中解析通用查询条件。
     bool parseQueryCondition(const httplib::Request& req, QueryCondition &queryCondition) {
 
         try {
@@ -175,15 +188,24 @@ protected:
                 queryCondition.ip = doc["ip"].GetString();
             }
 
-            if (doc.HasMember("port") && doc["port"].IsUint()) {
+            if (doc.HasMember("port")) {
+                if (!doc["port"].IsUint() || doc["port"].GetUint() > std::numeric_limits<uint16_t>::max()) {
+                    return false;
+                }
                 queryCondition.port = static_cast<uint16_t>(doc["port"].GetUint());
             }
 
-            if (doc.HasMember("proto") && doc["proto"].IsString()) {
+            if (doc.HasMember("proto")) {
+                if (!doc["proto"].IsString()) {
+                    return false;
+                }
                 queryCondition.proto = doc["proto"].GetString();
             }
 
-            if (doc.HasMember("session_id") && doc["session_id"].IsNumber()) {
+            if (doc.HasMember("session_id")) {
+                if (!doc["session_id"].IsUint()) {
+                    return false;
+                }
                 queryCondition.session_id = doc["session_id"].GetUint();
             }
 
@@ -199,3 +221,5 @@ protected:
 
 
 #endif //TSHARK_SERVER_PACKET_CONTROLLER_HPP
+
+

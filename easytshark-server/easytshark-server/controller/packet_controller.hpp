@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by xuanyuan on 2025/02/16.
 //
 
@@ -13,7 +13,7 @@
 #include "base_controller.hpp"
 
 
-// 数据包相关的接口
+// 数据包列表、详情、文件上传和离线分析任务接口。
 class PacketController : public BaseController {
 public:
     PacketController(httplib::Server &server, std::shared_ptr<TsharkManager> tsharkManager,
@@ -22,6 +22,7 @@ public:
     {
     }
 
+    // 注册数据包查询、文件分析和任务管理路由。
     virtual void registerRoute() {
 
         __server.Post("/api/getPacketList", [this](const httplib::Request& req, httplib::Response& res) {
@@ -197,6 +198,7 @@ public:
         }
     }
 
+    // 创建异步离线分析任务，支持上传文件或传入本地路径。
     void createAnalysisTask(const httplib::Request& req, httplib::Response& res) {
         try {
             std::string filePath;
@@ -227,6 +229,7 @@ public:
         }
     }
 
+    // 查询指定离线分析任务的状态。
     void getAnalysisTask(const httplib::Request& req, httplib::Response& res) {
         try {
             if (!__distributedRuntime || req.matches.size() < 2) {
@@ -245,6 +248,7 @@ public:
         }
     }
 
+    // 激活已完成任务，使前端查询切换到该任务数据集。
     void activateAnalysisTask(const httplib::Request& req, httplib::Response& res) {
         try {
             if (!__distributedRuntime || req.matches.size() < 2) {
@@ -262,6 +266,7 @@ public:
         }
     }
 
+    // 取消排队中或运行中的离线分析任务。
     void cancelAnalysisTask(const httplib::Request& req, httplib::Response& res) {
         try {
             if (!__distributedRuntime || req.matches.size() < 2) {
@@ -279,6 +284,7 @@ public:
     }
 
 private:
+    // 返回异步分析任务已入队的统一响应。
     void sendAnalysisTaskAccepted(httplib::Response& res, const std::string& taskId) {
         if (taskId.empty()) {
             return sendErrorResponse(res, ERROR_INTERNAL_WRONG);
@@ -293,6 +299,7 @@ private:
         sendJsonResponse(res, dataDoc);
     }
 
+    // 校验并保存上传的 pcap/pcapng/cap 文件。
     bool saveUploadedFile(const httplib::Request& req, std::string& uploadPath) {
         if (!req.has_file("file")) {
             return false;
@@ -342,6 +349,7 @@ private:
         return true;
     }
 
+    // 向分析运行时提交离线文件任务。
     std::string submitAnalysisTask(const std::string& filePath) {
         if (!__distributedRuntime) {
             return "";
