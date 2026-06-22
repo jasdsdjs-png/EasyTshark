@@ -7,14 +7,6 @@ EasyTshark 是一个网页前端 + C++17 本地后端的网络抓包与 pcap 离
 - `easytshark-web/`：React 网页前端，运行在 `http://localhost:3000`
 - `easytshark-server/`：C++17 后端，默认监听 `http://127.0.0.1:8080`
 
-## 面试展示定位
-
-EasyTshark 可以作为 C++ 后端岗位项目展示：它不是简单 CRUD，而是一个本地网络流量分析后端，覆盖 HTTP 服务、子进程编排、流式解析、并发任务调度、背压队列、SQLite 持久化和可观测性指标。推荐面试时围绕三个问题展开：
-
-- 如何把 tshark 子进程的流式输出稳定转换为结构化数据。
-- 如何用有界线程池和存储队列保护本地后端，避免大 pcap 或并发分析压垮进程。
-- 如何用 prepared statement、分页白名单、输入校验和 RAII 资源管理降低崩溃与注入风险。
-
 ## 技术亮点
 
 - C++17 本地 HTTP 后端：基于 cpp-httplib 注册 `/api` 接口，统一 JSON 响应格式。
